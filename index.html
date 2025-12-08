@@ -1,0 +1,642 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Plaza - Panel de Administración</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <!-- Pantalla de Login -->
+    <div id="login-screen" class="screen active">
+        <div class="login-container">
+            <div class="login-box">
+                <h1>🛍️ Plaza</h1>
+                <p class="subtitle">Panel de Administración WooCommerce</p>
+                <form id="login-form">
+                    <div class="form-group">
+                        <label for="username">Usuario</label>
+                        <input type="text" id="username" name="username" required autocomplete="username">
+                    </div>
+                    <div class="form-group">
+                        <label for="password">Contraseña</label>
+                        <input type="password" id="password" name="password" required autocomplete="current-password">
+                    </div>
+                    <div class="form-group">
+                        <label for="woocommerce-url">URL de tu tienda WooCommerce</label>
+                        <input type="url" id="woocommerce-url" name="woocommerce-url" placeholder="https://tutienda.com" required>
+                    </div>
+                    <div class="info-box" style="background: #eff6ff; border-left: 4px solid #3b82f6; padding: 12px; margin-bottom: 20px; border-radius: 4px; font-size: 0.875rem;">
+                        <strong>💡 Tip:</strong> Si usas WordPress 5.6+, puedes usar <strong>Application Passwords</strong> en lugar de tu contraseña normal. Ve a tu perfil de usuario en WordPress para crear una.
+                    </div>
+                    <button type="submit" class="btn btn-primary btn-block">Iniciar Sesión</button>
+                    <div id="login-error" class="error-message"></div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Dashboard Principal -->
+    <div id="dashboard-screen" class="screen">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-content">
+                <h1>🛍️ Plaza</h1>
+                <div class="header-actions">
+                    <span id="user-info" class="user-info"></span>
+                    <button id="logout-btn" class="btn btn-secondary">Cerrar Sesión</button>
+                </div>
+            </div>
+        </header>
+
+        <!-- Navegación -->
+        <nav class="sidebar">
+            <ul class="nav-menu">
+                <li><a href="#" data-page="dashboard" class="nav-link active">📊 Dashboard</a></li>
+                <li><a href="#" data-page="products" class="nav-link">📦 Productos</a></li>
+                <li><a href="#" data-page="orders" class="nav-link">🛒 Pedidos</a></li>
+                <li><a href="#" data-page="customers" class="nav-link">👥 Clientes</a></li>
+                <li><a href="#" data-page="reports" class="nav-link">📈 Reportes</a></li>
+                <li id="shipping-menu-item" style="display: none;"><a href="#" data-page="shipping" class="nav-link">🚚 Envíos</a></li>
+            </ul>
+        </nav>
+
+        <!-- Contenido Principal -->
+        <main class="main-content">
+            <!-- Dashboard -->
+            <div id="dashboard-page" class="page active">
+                <h2>Dashboard</h2>
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-icon">📦</div>
+                        <div class="stat-info">
+                            <h3 id="total-products">-</h3>
+                            <p>Productos</p>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon">🛒</div>
+                        <div class="stat-info">
+                            <h3 id="total-orders">-</h3>
+                            <p>Pedidos</p>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon">⏳</div>
+                        <div class="stat-info">
+                            <h3 id="pending-orders">-</h3>
+                            <p>Pedidos Pendientes</p>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon">✅</div>
+                        <div class="stat-info">
+                            <h3 id="completed-orders">-</h3>
+                            <p>Pedidos Completados</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Página de Productos -->
+            <div id="products-page" class="page">
+                <div class="page-header">
+                    <h2>Gestión de Productos</h2>
+                    <button id="new-product-btn" class="btn btn-primary">➕ Nuevo Producto</button>
+                </div>
+                
+                <div class="filters-bar">
+                    <input type="text" id="product-search" class="search-input" placeholder="🔍 Buscar productos...">
+                    <select id="product-status-filter" class="filter-select">
+                        <option value="">Todos los estados</option>
+                        <option value="publish">Publicado</option>
+                        <option value="draft">Borrador</option>
+                        <option value="pending">Pendiente</option>
+                    </select>
+                </div>
+
+                <div class="table-container">
+                    <table id="products-table" class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Imagen</th>
+                                <th>Nombre</th>
+                                <th>SKU</th>
+                                <th>Precio</th>
+                                <th>Stock</th>
+                                <th>Estado</th>
+                                <th>Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody id="products-tbody">
+                            <tr>
+                                <td colspan="7" class="loading">Cargando productos...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div id="products-pagination" class="pagination"></div>
+            </div>
+
+            <!-- Página de Pedidos -->
+            <div id="orders-page" class="page">
+                <div class="page-header">
+                    <h2>Gestión de Pedidos</h2>
+                </div>
+                
+                <div class="filters-bar">
+                    <input type="text" id="order-search" class="search-input" placeholder="🔍 Buscar pedidos...">
+                    <select id="order-status-filter" class="filter-select">
+                        <option value="">Todos los estados</option>
+                        <option value="pending">Pendiente</option>
+                        <option value="processing">Procesando</option>
+                        <option value="on-hold">En espera</option>
+                        <option value="completed">Completado</option>
+                        <option value="cancelled">Cancelado</option>
+                        <option value="refunded">Reembolsado</option>
+                        <option value="failed">Fallido</option>
+                    </select>
+                </div>
+
+                <div class="table-container">
+                    <table id="orders-table" class="data-table">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Fecha</th>
+                                <th>Cliente</th>
+                                <th>Total</th>
+                                <th>Estado</th>
+                                <th>Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody id="orders-tbody">
+                            <tr>
+                                <td colspan="6" class="loading">Cargando pedidos...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div id="orders-pagination" class="pagination"></div>
+            </div>
+
+            <!-- Página de Clientes -->
+            <div id="customers-page" class="page">
+                <div class="page-header">
+                    <h2>Gestión de Clientes</h2>
+                </div>
+                
+                <div class="filters-bar">
+                    <input type="text" id="customer-search" class="search-input" placeholder="🔍 Buscar clientes...">
+                </div>
+
+                <div class="table-container">
+                    <table id="customers-table" class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Nombre</th>
+                                <th>Email</th>
+                                <th>Teléfono</th>
+                                <th>Dirección</th>
+                            </tr>
+                        </thead>
+                        <tbody id="customers-tbody">
+                            <tr>
+                                <td colspan="4" class="loading">Cargando clientes...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div id="customers-pagination" class="pagination"></div>
+            </div>
+
+            <!-- Página de Reportes -->
+            <div id="reports-page" class="page">
+                <div class="page-header">
+                    <h2>Reportes y Analytics</h2>
+                </div>
+                
+                <!-- Filtros de Fecha -->
+                <div class="reports-filters">
+                    <div class="date-filters">
+                        <div class="date-input-group">
+                            <label for="report-date-from">Desde</label>
+                            <input type="date" id="report-date-from" class="date-input">
+                        </div>
+                        <div class="date-input-group">
+                            <label for="report-date-to">Hasta</label>
+                            <input type="date" id="report-date-to" class="date-input">
+                        </div>
+                        <button type="button" id="update-report-btn" class="btn btn-primary">Actualizar Reporte</button>
+                        <button type="button" id="reset-report-btn" class="btn btn-secondary">Resetear</button>
+                    </div>
+                    <div id="report-period" class="report-period"></div>
+                </div>
+
+                <!-- KPIs -->
+                <div class="kpi-grid">
+                    <div class="kpi-card">
+                        <div class="kpi-icon">💰</div>
+                        <div class="kpi-content">
+                            <h3 id="kpi-total-sales">$0</h3>
+                            <p>Total facturado en el periodo</p>
+                        </div>
+                    </div>
+                    <div class="kpi-card">
+                        <div class="kpi-icon">📦</div>
+                        <div class="kpi-content">
+                            <h3 id="kpi-total-orders">0</h3>
+                            <p>Total de pedidos realizados</p>
+                        </div>
+                    </div>
+                    <div class="kpi-card">
+                        <div class="kpi-icon">📊</div>
+                        <div class="kpi-content">
+                            <h3 id="kpi-avg-ticket">$0</h3>
+                            <p>Valor promedio por pedido</p>
+                        </div>
+                    </div>
+                    <div class="kpi-card">
+                        <div class="kpi-icon">👥</div>
+                        <div class="kpi-content">
+                            <h3 id="kpi-unique-customers">0</h3>
+                            <p>Clientes únicos con pedidos</p>
+                        </div>
+                    </div>
+                    <div class="kpi-card">
+                        <div class="kpi-icon">🛒</div>
+                        <div class="kpi-content">
+                            <h3 id="kpi-products-sold">0</h3>
+                            <p>Total de unidades vendidas</p>
+                        </div>
+                    </div>
+                    <div class="kpi-card">
+                        <div class="kpi-icon">📈</div>
+                        <div class="kpi-content">
+                            <h3 id="kpi-unique-products">0</h3>
+                            <p>Diferentes productos vendidos</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Estados de Pedidos -->
+                <div class="report-section">
+                    <h3>Estados de Pedidos</h3>
+                    <div id="order-status-chart" class="status-chart">
+                        <!-- Se generará dinámicamente -->
+                    </div>
+                </div>
+
+                <!-- Productos Más Vendidos -->
+                <div class="report-section">
+                    <h3>Productos Más Vendidos</h3>
+                    <div class="table-container">
+                        <table id="top-products-table" class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>#</th>
+                                    <th>PRODUCTO</th>
+                                    <th>CANTIDAD VENDIDA</th>
+                                    <th>INGRESOS</th>
+                                </tr>
+                            </thead>
+                            <tbody id="top-products-tbody">
+                                <tr>
+                                    <td colspan="4" class="loading">Cargando productos...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Página de Envíos (Solo Admin) -->
+            <div id="shipping-page" class="page">
+                <div class="page-header">
+                    <h2>Envíos</h2>
+                    <button id="add-shipping-zone-btn" class="btn btn-primary">Añadir zona de envío</button>
+                </div>
+                
+                <div id="shipping-container">
+                    <div id="shipping-loading" class="loading" style="padding: 40px; text-align: center;">
+                        Cargando zonas de envío...
+                    </div>
+                    
+                    <div id="shipping-zones-list" style="display: none;">
+                        <!-- Las zonas de envío se cargarán dinámicamente -->
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Modal para Producto -->
+    <div id="product-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="product-modal-title">Nuevo Producto</h3>
+                <button class="modal-close" id="product-modal-close">&times;</button>
+            </div>
+            <form id="product-form">
+                <div class="form-group">
+                    <label for="product-name">Nombre del Producto *</label>
+                    <input type="text" id="product-name" required>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="product-price">Precio Regular *</label>
+                        <input type="number" id="product-price" step="0.01" min="0" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="product-sale-price">Precio de Oferta</label>
+                        <input type="number" id="product-sale-price" step="0.01" min="0">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="product-sku">SKU</label>
+                        <input type="text" id="product-sku">
+                    </div>
+                    <div class="form-group">
+                        <label for="product-stock">Stock</label>
+                        <input type="number" id="product-stock" min="0">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="product-status">Estado</label>
+                    <select id="product-status">
+                        <option value="publish">Publicado</option>
+                        <option value="draft">Borrador</option>
+                        <option value="pending">Pendiente</option>
+                    </select>
+                </div>
+                <!-- Descripciones -->
+                <div class="form-group">
+                    <label>Descripciones</label>
+                    
+                    <!-- Descripción Corta -->
+                    <div style="margin-bottom: 20px;">
+                        <label for="product-short-description" style="font-weight: 600; margin-bottom: 8px; display: block;">Descripción Corta</label>
+                        <div class="rich-editor">
+                            <div class="editor-toolbar" data-editor="short-description">
+                                <button type="button" class="toolbar-btn" data-command="bold" title="Negrita">
+                                    <strong>B</strong>
+                                </button>
+                                <button type="button" class="toolbar-btn" data-command="italic" title="Cursiva">
+                                    <em>I</em>
+                                </button>
+                                <button type="button" class="toolbar-btn" data-command="underline" title="Subrayado">
+                                    <u>U</u>
+                                </button>
+                                <button type="button" class="toolbar-btn" data-command="strikeThrough" title="Tachado">
+                                    <s>S</s>
+                                </button>
+                                <div class="toolbar-separator"></div>
+                                <button type="button" class="toolbar-btn" data-command="insertUnorderedList" title="Lista con viñetas">
+                                    <span>•</span>
+                                </button>
+                                <button type="button" class="toolbar-btn" data-command="insertOrderedList" title="Lista numerada">
+                                    <span>1.</span>
+                                </button>
+                                <div class="toolbar-separator"></div>
+                                <button type="button" class="toolbar-btn" data-command="createLink" title="Insertar enlace">
+                                    🔗
+                                </button>
+                                <button type="button" class="toolbar-btn" data-command="unlink" title="Quitar enlace">
+                                    🔗̸
+                                </button>
+                                <div class="toolbar-separator"></div>
+                                <button type="button" class="toolbar-btn" data-command="undo" title="Deshacer">
+                                    ↶
+                                </button>
+                                <button type="button" class="toolbar-btn" data-command="redo" title="Rehacer">
+                                    ↷
+                                </button>
+                                <div class="toolbar-separator"></div>
+                                <button type="button" class="toolbar-btn editor-tab active" data-tab="visual" data-editor="short-description">Visual</button>
+                                <button type="button" class="toolbar-btn editor-tab" data-tab="code" data-editor="short-description">Código</button>
+                            </div>
+                            <div class="editor-content">
+                                <div class="editor-visual" id="short-description-visual" contenteditable="true"></div>
+                                <textarea class="editor-code" id="short-description-code" style="display: none;"></textarea>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Descripción Larga -->
+                    <div>
+                        <label for="product-description" style="font-weight: 600; margin-bottom: 8px; display: block;">Descripción</label>
+                        <div class="rich-editor">
+                            <div class="editor-toolbar" data-editor="description">
+                                <button type="button" class="toolbar-btn" data-command="bold" title="Negrita">
+                                    <strong>B</strong>
+                                </button>
+                                <button type="button" class="toolbar-btn" data-command="italic" title="Cursiva">
+                                    <em>I</em>
+                                </button>
+                                <button type="button" class="toolbar-btn" data-command="underline" title="Subrayado">
+                                    <u>U</u>
+                                </button>
+                                <button type="button" class="toolbar-btn" data-command="strikeThrough" title="Tachado">
+                                    <s>S</s>
+                                </button>
+                                <div class="toolbar-separator"></div>
+                                <button type="button" class="toolbar-btn" data-command="insertUnorderedList" title="Lista con viñetas">
+                                    <span>•</span>
+                                </button>
+                                <button type="button" class="toolbar-btn" data-command="insertOrderedList" title="Lista numerada">
+                                    <span>1.</span>
+                                </button>
+                                <div class="toolbar-separator"></div>
+                                <button type="button" class="toolbar-btn" data-command="createLink" title="Insertar enlace">
+                                    🔗
+                                </button>
+                                <button type="button" class="toolbar-btn" data-command="unlink" title="Quitar enlace">
+                                    🔗̸
+                                </button>
+                                <div class="toolbar-separator"></div>
+                                <button type="button" class="toolbar-btn" data-command="undo" title="Deshacer">
+                                    ↶
+                                </button>
+                                <button type="button" class="toolbar-btn" data-command="redo" title="Rehacer">
+                                    ↷
+                                </button>
+                                <div class="toolbar-separator"></div>
+                                <button type="button" class="toolbar-btn editor-tab active" data-tab="visual" data-editor="description">Visual</button>
+                                <button type="button" class="toolbar-btn editor-tab" data-tab="code" data-editor="description">Código</button>
+                            </div>
+                            <div class="editor-content">
+                                <div class="editor-visual" id="description-visual" contenteditable="true"></div>
+                                <textarea class="editor-code" id="description-code" style="display: none;"></textarea>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Sección de Envío -->
+                <div class="form-group">
+                    <label style="font-weight: 600; margin-bottom: 15px; display: block;">Envío</label>
+                    
+                    <!-- Peso -->
+                    <div style="margin-bottom: 20px;">
+                        <label for="product-weight" style="font-weight: 500; margin-bottom: 8px; display: block;">Peso (kg)</label>
+                        <input type="number" id="product-weight" step="0.01" min="0" placeholder="0.00">
+                        <small style="color: var(--text-secondary); display: block; margin-top: 5px;">
+                            Peso del producto en kilogramos.
+                        </small>
+                    </div>
+                    
+                    <!-- Dimensiones -->
+                    <div style="margin-bottom: 20px;">
+                        <label style="font-weight: 500; margin-bottom: 8px; display: block;">Dimensiones (cm)</label>
+                        <div class="form-row">
+                            <div class="form-group" style="margin-bottom: 0;">
+                                <label for="product-length" style="font-size: 0.875rem; color: var(--text-secondary);">Longitud</label>
+                                <input type="number" id="product-length" step="0.01" min="0" placeholder="0">
+                            </div>
+                            <div class="form-group" style="margin-bottom: 0;">
+                                <label for="product-width" style="font-size: 0.875rem; color: var(--text-secondary);">Ancho</label>
+                                <input type="number" id="product-width" step="0.01" min="0" placeholder="0">
+                            </div>
+                            <div class="form-group" style="margin-bottom: 0;">
+                                <label for="product-height" style="font-size: 0.875rem; color: var(--text-secondary);">Alto</label>
+                                <input type="number" id="product-height" step="0.01" min="0" placeholder="0">
+                            </div>
+                        </div>
+                        <small style="color: var(--text-secondary); display: block; margin-top: 5px;">
+                            Dimensiones del producto en centímetros (Largo x Ancho x Alto).
+                        </small>
+                    </div>
+                    
+                    <!-- Clase de Envío -->
+                    <div>
+                        <label for="product-shipping-class" style="font-weight: 500; margin-bottom: 8px; display: block;">Clase de envío</label>
+                        <select id="product-shipping-class">
+                            <option value="">Ninguna clase de envío</option>
+                            <!-- Las clases de envío se cargarán dinámicamente -->
+                        </select>
+                        <small style="color: var(--text-secondary); display: block; margin-top: 5px;">
+                            Selecciona una clase de envío para este producto. Las clases de envío se configuran en WooCommerce > Envío > Clases de envío.
+                        </small>
+                    </div>
+                </div>
+                
+                <!-- Sección de Imágenes -->
+                <div class="form-group">
+                    <label>Imágenes del Producto</label>
+                    <div id="product-images-container" class="images-container">
+                        <!-- Las imágenes se agregarán aquí dinámicamente -->
+                    </div>
+                    <div class="image-input-group">
+                        <input type="url" id="product-image-url" placeholder="https://... (pega la URL de la imagen)" class="image-url-input">
+                        <button type="button" id="add-image-btn" class="btn btn-secondary btn-sm">➕ Agregar URL</button>
+                    </div>
+                    <div style="margin-top: 10px; display: flex; align-items: center; gap: 10px;">
+                        <label for="product-image-file" class="btn btn-secondary btn-sm" style="cursor: pointer; margin: 0;">
+                            📁 Subir Archivo
+                        </label>
+                        <input type="file" id="product-image-file" accept="image/*" style="display: none;">
+                        <small style="color: var(--text-secondary);">
+                            O sube una imagen desde tu computadora
+                        </small>
+                    </div>
+                    <small style="color: var(--text-secondary); display: block; margin-top: 8px;">
+                        💡 Puedes agregar múltiples imágenes. La primera será la imagen principal.
+                    </small>
+                </div>
+                
+                <div class="modal-actions">
+                    <div style="display: flex; justify-content: space-between; width: 100%; align-items: center;">
+                        <div>
+                            <button type="button" id="delete-product-btn" class="btn btn-danger" style="display: none;">🗑️ Eliminar Producto</button>
+                        </div>
+                        <div style="display: flex; gap: 10px;">
+                            <button type="button" class="btn btn-secondary" id="product-form-cancel">Cancelar</button>
+                            <button type="submit" class="btn btn-primary">Guardar Producto</button>
+                        </div>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal para Cambiar Estado de Pedido -->
+    <div id="order-status-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Cambiar Estado del Pedido</h3>
+                <button class="modal-close" id="order-status-modal-close">&times;</button>
+            </div>
+            <form id="order-status-form">
+                <div class="form-group">
+                    <label for="new-order-status">Nuevo Estado *</label>
+                    <select id="new-order-status" required>
+                        <option value="pending">Pendiente</option>
+                        <option value="processing">Procesando</option>
+                        <option value="on-hold">En espera</option>
+                        <option value="completed">Completado</option>
+                        <option value="cancelled">Cancelado</option>
+                        <option value="refunded">Reembolsado</option>
+                        <option value="failed">Fallido</option>
+                    </select>
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-secondary" id="order-status-form-cancel">Cancelar</button>
+                    <button type="submit" class="btn btn-primary">Actualizar Estado</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal para Zona de Envío -->
+    <div id="shipping-zone-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="shipping-zone-modal-title">Nueva Zona de Envío</h3>
+                <button class="modal-close" id="shipping-zone-modal-close">&times;</button>
+            </div>
+            <form id="shipping-zone-form">
+                <div class="form-group">
+                    <label for="zone-name">Nombre de la zona *</label>
+                    <input type="text" id="zone-name" required placeholder="Ej: Envío Nacional">
+                </div>
+                
+                <div class="form-group">
+                    <label>Tipo de ubicación</label>
+                    <select id="zone-location-type" class="form-control">
+                        <option value="all">Todos los países</option>
+                        <option value="countries">Países específicos</option>
+                        <option value="states">Estados/Provincias específicos</option>
+                        <option value="postcodes">Códigos postales específicos</option>
+                    </select>
+                </div>
+                
+                <div id="zone-locations-container" style="display: none;">
+                    <div class="form-group">
+                        <label id="zone-locations-label">Ubicaciones (una por línea o separadas por comas)</label>
+                        <textarea id="zone-locations" rows="5" placeholder="Ej: ES, FR, IT o para códigos postales: 28001, 28002"></textarea>
+                        <small style="color: var(--text-secondary); margin-top: 5px; display: block;">
+                            Para países: usa códigos ISO (ES, FR, US, etc.)<br>
+                            Para estados: usa formato PAÍS:ESTADO (ES:28, US:CA, etc.)<br>
+                            Para códigos postales: ingresa los códigos separados por comas
+                        </small>
+                    </div>
+                </div>
+                
+                <div class="form-actions">
+                    <button type="button" class="btn btn-secondary" id="shipping-zone-cancel-btn">Cancelar</button>
+                    <button type="submit" class="btn btn-primary">Guardar Zona</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Toast para Notificaciones -->
+    <div id="toast" class="toast"></div>
+
+    <script src="auth.js"></script>
+    <script src="api.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
+
