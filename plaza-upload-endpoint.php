@@ -12,6 +12,87 @@ if (!defined('ABSPATH')) {
 }
 
 /**
+ * Manejar peticiones OPTIONS (preflight) para CORS
+ */
+add_action('init', function() {
+    // Solo procesar si es una petición a la API REST
+    if (isset($_SERVER['REQUEST_URI']) && strpos($_SERVER['REQUEST_URI'], '/wp-json/plaza/') !== false) {
+        if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
+            $allowed_origins = array(
+                'https://agencianarkan.github.io',
+                'http://localhost:3000',
+                'http://localhost:8000',
+                'http://127.0.0.1:8000'
+            );
+            
+            $origin = isset($_SERVER['HTTP_ORIGIN']) ? $_SERVER['HTTP_ORIGIN'] : '';
+            
+            if (in_array($origin, $allowed_origins)) {
+                header('Access-Control-Allow-Origin: ' . $origin);
+                header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
+                header('Access-Control-Allow-Credentials: true');
+                header('Access-Control-Allow-Headers: Authorization, Content-Type, X-Requested-With');
+                header('Access-Control-Max-Age: 86400');
+                status_header(200);
+                exit();
+            }
+        }
+    }
+});
+
+/**
+ * Agregar headers CORS para permitir peticiones desde GitHub Pages
+ */
+add_action('rest_api_init', function() {
+    // Permitir origen de GitHub Pages y otros orígenes necesarios
+    $allowed_origins = array(
+        'https://agencianarkan.github.io',
+        'http://localhost:3000',
+        'http://localhost:8000',
+        'http://127.0.0.1:8000'
+    );
+    
+    $origin = isset($_SERVER['HTTP_ORIGIN']) ? $_SERVER['HTTP_ORIGIN'] : '';
+    
+    if (in_array($origin, $allowed_origins)) {
+        header('Access-Control-Allow-Origin: ' . $origin);
+        header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
+        header('Access-Control-Allow-Credentials: true');
+        header('Access-Control-Allow-Headers: Authorization, Content-Type, X-Requested-With');
+        header('Access-Control-Max-Age: 86400');
+    }
+    
+    // Manejar preflight OPTIONS requests
+    if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
+        status_header(200);
+        exit();
+    }
+}, 15);
+
+/**
+ * Agregar headers CORS antes de servir respuesta REST
+ */
+add_filter('rest_pre_serve_request', function($served, $result, $request, $server) {
+    $allowed_origins = array(
+        'https://agencianarkan.github.io',
+        'http://localhost:3000',
+        'http://localhost:8000',
+        'http://127.0.0.1:8000'
+    );
+    
+    $origin = isset($_SERVER['HTTP_ORIGIN']) ? $_SERVER['HTTP_ORIGIN'] : '';
+    
+    if (in_array($origin, $allowed_origins)) {
+        header('Access-Control-Allow-Origin: ' . $origin);
+        header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
+        header('Access-Control-Allow-Credentials: true');
+        header('Access-Control-Allow-Headers: Authorization, Content-Type, X-Requested-With');
+    }
+    
+    return $served;
+}, 10, 4);
+
+/**
  * Registrar endpoint personalizado para subir imágenes
  */
 add_action('rest_api_init', function() {
