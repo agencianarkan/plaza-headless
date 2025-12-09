@@ -3,11 +3,11 @@
 class Auth {
     constructor() {
         this.baseUrl = null;
-        this.username = null;
-        this.password = null;
+        this.token = null; // Token JWT
         this.isAuthenticated = false;
         this.userRole = null;
         this.isAdmin = false;
+        this.userId = null;
     }
 
     // Inicializar desde localStorage
@@ -16,14 +16,14 @@ class Auth {
             const saved = localStorage.getItem('plaza_auth');
             if (saved) {
                 const data = JSON.parse(saved);
-                if (data.baseUrl && data.username && data.password) {
+                if (data.baseUrl && data.token) {
                     this.baseUrl = data.baseUrl;
-                    this.username = data.username;
-                    this.password = data.password;
+                    this.token = data.token;
                     this.isAuthenticated = true;
                     this.userRole = data.userRole || null;
                     this.isAdmin = data.isAdmin || false;
-                    console.log('Credenciales cargadas desde localStorage');
+                    this.userId = data.userId || null;
+                    console.log('Token cargado desde localStorage');
                 } else {
                     console.warn('Credenciales incompletas en localStorage, limpiando...');
                     localStorage.removeItem('plaza_auth');
@@ -40,17 +40,17 @@ class Auth {
         }
     }
 
-    // Guardar credenciales en localStorage
-    saveCredentials(baseUrl, username, password, userRole = null, isAdmin = false) {
+    // Guardar credenciales (token JWT) en localStorage
+    saveCredentials(baseUrl, token, userId = null, userRole = null, isAdmin = false) {
         this.baseUrl = baseUrl.replace(/\/$/, ''); // Remover trailing slash
-        this.username = username;
-        this.password = password;
+        this.token = token;
+        this.userId = userId;
         this.userRole = userRole;
         this.isAdmin = isAdmin;
         localStorage.setItem('plaza_auth', JSON.stringify({
             baseUrl: this.baseUrl,
-            username: this.username,
-            password: this.password,
+            token: this.token,
+            userId: this.userId,
             userRole: this.userRole,
             isAdmin: this.isAdmin
         }));
@@ -201,20 +201,18 @@ class Auth {
         }
     }
 
-    // Obtener headers de autenticación para las peticiones
+    // Obtener headers de autenticación para las peticiones (Bearer Token)
     getAuthHeaders() {
-        if (!this.baseUrl || !this.username || !this.password) {
+        if (!this.baseUrl || !this.token) {
             console.error('Credenciales faltantes:', {
                 baseUrl: this.baseUrl,
-                username: this.username ? 'presente' : 'faltante',
-                password: this.password ? 'presente' : 'faltante'
+                token: this.token ? 'presente' : 'faltante'
             });
-            throw new Error('No hay credenciales guardadas. Por favor, inicia sesión nuevamente.');
+            throw new Error('No hay token guardado. Por favor, inicia sesión nuevamente.');
         }
 
-        const credentials = btoa(`${this.username}:${this.password}`);
         return {
-            'Authorization': `Basic ${credentials}`,
+            'Authorization': `Bearer ${this.token}`,
             'Content-Type': 'application/json'
         };
     }
@@ -230,17 +228,17 @@ class Auth {
     // Cerrar sesión
     logout() {
         this.baseUrl = null;
-        this.username = null;
-        this.password = null;
+        this.token = null;
         this.isAuthenticated = false;
         this.userRole = null;
         this.isAdmin = false;
+        this.userId = null;
         localStorage.removeItem('plaza_auth');
     }
 
     // Verificar si está autenticado
     checkAuth() {
-        return this.isAuthenticated && this.baseUrl && this.username && this.password;
+        return this.isAuthenticated && this.baseUrl && this.token;
     }
 
     // ========== GOOGLE OAUTH ==========
@@ -358,25 +356,24 @@ class Auth {
                 throw new Error(data.message || 'Error en la autenticación');
             }
 
-            // Guardar credenciales
+            // Guardar credenciales (token JWT)
             this.saveCredentials(
                 data.baseUrl,
-                data.username,
-                data.password,
+                data.token,
+                data.userId || null,
                 null, // userRole se obtendrá después
                 false // isAdmin se verificará después
             );
 
             this.isAuthenticated = true;
 
-            // Verificar rol de usuario (similar a authenticate normal)
+            // Verificar rol de usuario usando el token
             try {
                 const wpUrl = `${cleanUrl}/wp-json/wp/v2/users/me?context=edit`;
-                const credentials = btoa(`${data.username}:${data.password}`);
                 const wpResponse = await fetch(wpUrl, {
                     method: 'GET',
                     headers: {
-                        'Authorization': `Basic ${credentials}`,
+                        'Authorization': `Bearer ${data.token}`,
                         'Content-Type': 'application/json'
                     }
                 });
@@ -391,7 +388,7 @@ class Auth {
                             const userByIdResponse = await fetch(userByIdUrl, {
                                 method: 'GET',
                                 headers: {
-                                    'Authorization': `Basic ${credentials}`,
+                                    'Authorization': `Bearer ${data.token}`,
                                     'Content-Type': 'application/json'
                                 }
                             });
@@ -412,12 +409,13 @@ class Auth {
                     
                     this.userRole = userRole;
                     this.isAdmin = isAdmin;
+                    this.userId = userData.id || data.userId;
                     
                     // Actualizar credenciales guardadas con rol
                     this.saveCredentials(
                         data.baseUrl,
-                        data.username,
-                        data.password,
+                        data.token,
+                        this.userId,
                         userRole,
                         isAdmin
                     );

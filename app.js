@@ -74,16 +74,13 @@ async function checkAndShowShippingMenu() {
     // Si no tenemos el rol, intentar obtenerlo
     try {
         const baseUrl = auth.getBaseUrl();
-        const credentials = btoa(`${auth.username}:${auth.password}`);
+        const headers = auth.getAuthHeaders();
         
         // Intentar obtener con contexto edit para incluir roles
         const wpUrl = `${baseUrl}/wp-json/wp/v2/users/me?context=edit`;
         const wpResponse = await fetch(wpUrl, {
             method: 'GET',
-            headers: {
-                'Authorization': `Basic ${credentials}`,
-                'Content-Type': 'application/json'
-            }
+            headers: headers
         });
         
         if (wpResponse.ok) {
@@ -98,10 +95,7 @@ async function checkAndShowShippingMenu() {
                     const userByIdUrl = `${baseUrl}/wp-json/wp/v2/users/${userData.id}?context=edit`;
                     const userByIdResponse = await fetch(userByIdUrl, {
                         method: 'GET',
-                        headers: {
-                            'Authorization': `Basic ${credentials}`,
-                            'Content-Type': 'application/json'
-                        }
+                        headers: headers
                     });
                     
                     if (userByIdResponse.ok) {
@@ -379,7 +373,7 @@ async function handleGoogleCallback() {
         wcAPI.init(auth.getBaseUrl());
         
         const userInfo = document.getElementById('user-info');
-        userInfo.textContent = `Usuario: ${auth.username}`;
+        userInfo.textContent = `Usuario: ${auth.userId || 'Autenticado'}`;
         
         showDashboard();
         loadDashboard();

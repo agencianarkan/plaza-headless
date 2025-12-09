@@ -61,6 +61,9 @@ add_action('rest_api_init', function() {
     ));
 });
 
+// Middleware: Interceptar peticiones REST para validar tokens JWT
+add_filter('rest_authentication_errors', 'plaza_rest_authentication', 10, 2);
+
 // Agregar menú de configuración en WordPress Admin
 add_action('admin_menu', 'plaza_add_admin_menu');
 add_action('admin_init', 'plaza_settings_init');
@@ -142,13 +145,117 @@ function plaza_options_page() {
 }
 
 /**
- * Verificar permisos del usuario
+ * Obtener headers HTTP (compatible con todos los servidores)
+ */
+function plaza_get_all_headers() {
+    if (function_exists('getallheaders')) {
+        return getallheaders();
+    }
+    
+    // Fallback para servidores que no tienen getallheaders()
+    $headers = array();
+    foreach ($_SERVER as $name => $value) {
+        if (substr($name, 0, 5) == 'HTTP_') {
+            $headers[str_replace(' ', '-', ucwords(strtolower(str_replace('_', ' ', substr($name, 5)))))] = $value;
+        }
+    }
+    return $headers;
+}
+
+/**
+ * Middleware: Validar tokens JWT en peticiones REST
+ */
+function plaza_rest_authentication($result, $server) {
+    // Si ya hay un resultado (autenticación exitosa o error específico), no interferir
+    if (!empty($result)) {
+        return $result;
+    }
+    
+    // Solo procesar peticiones a la API de WooCommerce
+    $request_uri = isset($_SERVER['REQUEST_URI']) ? $_SERVER['REQUEST_URI'] : '';
+    if (strpos($request_uri, '/wp-json/wc/v3/') === false) {
+        return $result; // No es una petición a WooCommerce, dejar pasar
+    }
+    
+    // Obtener token del header Authorization
+    $headers = plaza_get_all_headers();
+    $auth_header = isset($headers['Authorization']) ? $headers['Authorization'] : '';
+    
+    if (empty($auth_header)) {
+        return new WP_Error(
+            'plaza_unauthorized',
+            'Token de autorización requerido. Por favor, inicia sesión con Google.',
+            array('status' => 401)
+        );
+    }
+    
+    // Extraer token Bearer
+    if (preg_match('/Bearer\s+(.*)$/i', $auth_header, $matches)) {
+        $token = $matches[1];
+    } else {
+        return new WP_Error(
+            'plaza_invalid_token',
+            'Formato de token inválido. Use: Authorization: Bearer <token>',
+            array('status' => 401)
+        );
+    }
+    
+    // Validar token
+    $user_id = plaza_validate_token($token);
+    
+    if (!$user_id) {
+        return new WP_Error(
+            'plaza_invalid_token',
+            'Token inválido o expirado. Por favor, inicia sesión nuevamente.',
+            array('status' => 401)
+        );
+    }
+    
+    // Establecer usuario actual para WordPress
+    wp_set_current_user($user_id);
+    
+    // Verificar que tenga permisos adecuados
+    $user = get_userdata($user_id);
+    if (!$user || (!user_can($user_id, 'manage_woocommerce') && !user_can($user_id, 'administrator'))) {
+        return new WP_Error(
+            'plaza_insufficient_permissions',
+            'No tienes permisos suficientes. Se requiere rol de Administrator o Shop Manager.',
+            array('status' => 403)
+        );
+    }
+    
+    // Token válido, permitir acceso
+    return true;
+}
+
+/**
+ * Verificar permisos del usuario usando token JWT (para endpoints personalizados)
  */
 function plaza_check_permissions() {
-    // Verificar que el usuario esté autenticado
-    if (!is_user_logged_in()) {
-        return new WP_Error('unauthorized', 'Usuario no autenticado', array('status' => 401));
+    // Obtener token del header Authorization
+    $headers = plaza_get_all_headers();
+    $auth_header = isset($headers['Authorization']) ? $headers['Authorization'] : '';
+    
+    if (empty($auth_header)) {
+        return new WP_Error('unauthorized', 'Token de autorización requerido', array('status' => 401));
     }
+    
+    // Extraer token Bearer
+    if (preg_match('/Bearer\s+(.*)$/i', $auth_header, $matches)) {
+        $token = $matches[1];
+    } else {
+        return new WP_Error('unauthorized', 'Formato de token inválido', array('status' => 401));
+    }
+    
+    // Validar token
+    $user_id = plaza_validate_token($token);
+    
+    if (!$user_id) {
+        return new WP_Error('unauthorized', 'Token inválido o expirado', array('status' => 401));
+    }
+    
+    // Establecer usuario actual para WordPress
+    wp_set_current_user($user_id);
     
     // Verificar que tenga permisos de subir archivos
     if (!current_user_can('upload_files')) {
@@ -290,23 +397,24 @@ function plaza_google_auth($request) {
         return new WP_Error('user_not_found', 'Este email no está registrado en WordPress. Contacta al administrador.', array('status' => 404));
     }
     
-    // Paso 4: Generar Application Password
-    $app_password = plaza_generate_application_password($user->ID);
+    // Paso 4: Generar Token JWT
+    $token = plaza_generate_jwt_token($user->ID);
     
-    if (is_wp_error($app_password)) {
-        return $app_password;
+    if (is_wp_error($token)) {
+        return $token;
     }
     
     // Paso 5: Obtener URL base del sitio
     $base_url = home_url();
     
-    // Devolver credenciales
+    // Devolver credenciales con token JWT
     return array(
         'success' => true,
-        'username' => $user->user_login,
-        'password' => $app_password,
+        'token' => $token,
         'baseUrl' => $base_url,
         'email' => $email,
+        'userId' => $user->ID,
+        'username' => $user->user_login,
         'message' => 'Autenticación exitosa'
     );
 }
@@ -384,76 +492,93 @@ function plaza_get_google_user_info($access_token) {
 }
 
 /**
- * Generar Application Password para un usuario
+ * Generar Token JWT para un usuario
  */
-function plaza_generate_application_password($user_id) {
-    // Asegurar que las funciones de Application Passwords estén cargadas
-    if (!function_exists('wp_create_application_password')) {
-        // Intentar cargar el archivo que contiene Application Passwords
-        require_once(ABSPATH . 'wp-includes/user.php');
-        
-        // Verificar nuevamente después de cargar
-        if (!function_exists('wp_create_application_password')) {
-            $wordpress_version = get_bloginfo('version');
-            
-            // Verificar si hay un plugin que deshabilite Application Passwords
-            $disabled_by_plugin = false;
-            if (has_filter('wp_is_application_passwords_available')) {
-                $disabled_by_plugin = !apply_filters('wp_is_application_passwords_available', true);
-            }
-            
-            $error_message = 'Application Passwords no está disponible. ';
-            $error_message .= 'Tu WordPress es versión ' . $wordpress_version . '. ';
-            
-            if ($disabled_by_plugin) {
-                $error_message .= 'Parece que un plugin está deshabilitando Application Passwords. ';
-            }
-            
-            $error_message .= 'Se requiere WordPress 5.6 o superior. ';
-            $error_message .= 'Si estás en WordPress 6+, verifica que no haya plugins deshabilitando esta funcionalidad.';
-            
-            return new WP_Error(
-                'app_password_not_supported', 
-                $error_message, 
-                array(
-                    'status' => 500,
-                    'wordpress_version' => $wordpress_version,
-                    'required_version' => '5.6',
-                    'function_exists' => function_exists('wp_create_application_password'),
-                    'disabled_by_plugin' => $disabled_by_plugin
-                )
-            );
-        }
+function plaza_generate_jwt_token($user_id) {
+    $user = get_user_by('ID', $user_id);
+    
+    if (!$user) {
+        return new WP_Error('user_not_found', 'Usuario no encontrado', array('status' => 404));
     }
     
-    // Verificar que Application Passwords esté disponible para el usuario
-    if (!wp_is_application_passwords_available_for_user($user_id)) {
-        return new WP_Error(
-            'app_password_not_available_for_user',
-            'Application Passwords no está disponible para este usuario. Verifica la configuración del usuario.',
-            array('status' => 403)
-        );
+    // Generar token único y seguro
+    $token_data = array(
+        'user_id' => $user_id,
+        'email' => $user->user_email,
+        'login' => $user->user_login,
+        'created_at' => time(),
+        'expires_at' => time() + (30 * 24 * 60 * 60) // 30 días
+    );
+    
+    // Obtener o generar clave secreta para firmar tokens
+    $secret_key = get_option('plaza_jwt_secret', '');
+    if (empty($secret_key)) {
+        $secret_key = wp_generate_password(64, true, true);
+        update_option('plaza_jwt_secret', $secret_key);
     }
     
-    // Crear nombre único para la aplicación
-    $app_name = 'Plaza - ' . date('Y-m-d H:i:s');
+    // Crear payload codificado
+    $payload = base64_encode(json_encode($token_data));
     
-    // Generar Application Password
-    $new_password = wp_create_application_password($user_id, array('name' => $app_name));
+    // Crear firma HMAC
+    $signature = hash_hmac('sha256', $payload, $secret_key);
     
-    if (is_wp_error($new_password)) {
-        // Mejorar el mensaje de error
-        $error_code = $new_password->get_error_code();
-        $error_message = $new_password->get_error_message();
-        
-        return new WP_Error(
-            $error_code,
-            'Error al generar Application Password: ' . $error_message,
-            array('status' => 500)
-        );
+    // Crear token JWT (payload.signature)
+    $token = $payload . '.' . $signature;
+    
+    // Guardar token en user meta para validación rápida
+    update_user_meta($user_id, 'plaza_jwt_token', $token);
+    update_user_meta($user_id, 'plaza_jwt_expires', $token_data['expires_at']);
+    
+    return $token;
+}
+
+/**
+ * Validar Token JWT
+ */
+function plaza_validate_token($token) {
+    if (empty($token)) {
+        return false;
     }
     
-    // El formato es: "xxxx xxxx xxxx xxxx" (sin espacios para Basic Auth)
-    return str_replace(' ', '', $new_password);
+    // Separar payload y firma
+    $parts = explode('.', $token);
+    if (count($parts) !== 2) {
+        return false;
+    }
+    
+    $payload = $parts[0];
+    $signature = $parts[1];
+    
+    // Obtener clave secreta
+    $secret_key = get_option('plaza_jwt_secret', '');
+    if (empty($secret_key)) {
+        return false;
+    }
+    
+    // Verificar firma
+    $expected_signature = hash_hmac('sha256', $payload, $secret_key);
+    if (!hash_equals($expected_signature, $signature)) {
+        return false;
+    }
+    
+    // Decodificar payload
+    $token_data = json_decode(base64_decode($payload), true);
+    if (!$token_data || !isset($token_data['user_id'])) {
+        return false;
+    }
+    
+    // Verificar expiración
+    if (isset($token_data['expires_at']) && time() > $token_data['expires_at']) {
+        return false;
+    }
+    
+    // Verificar que el usuario existe
+    $user = get_user_by('ID', $token_data['user_id']);
+    if (!$user) {
+        return false;
+    }
+    
+    return $token_data['user_id'];
 }
 
