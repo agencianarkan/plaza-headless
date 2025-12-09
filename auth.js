@@ -242,6 +242,196 @@ class Auth {
     checkAuth() {
         return this.isAuthenticated && this.baseUrl && this.username && this.password;
     }
+
+    // ========== GOOGLE OAUTH ==========
+
+    /**
+     * Iniciar autenticación con Google OAuth
+     * @param {string} baseUrl - URL base de WordPress
+     */
+    async authWithGoogle(baseUrl) {
+        if (!baseUrl) {
+            throw new Error('URL de la tienda es requerida');
+        }
+
+        // Obtener Client ID desde WordPress (necesitamos hacer una petición primero)
+        // Por ahora, vamos a usar un flujo donde el Client ID se obtiene del servidor
+        // O podemos pedirlo al usuario, pero mejor obtenerlo del servidor
+        
+        const cleanUrl = baseUrl.replace(/\/$/, '');
+        
+        // Verificar que Google OAuth esté configurado en WordPress
+        // Intentar obtener Client ID desde un endpoint (opcional, por ahora usamos el flujo directo)
+        
+        // Construir URL de autorización de Google
+        // Nota: El Client ID debe estar configurado en WordPress
+        // Por ahora, vamos a pedirle al usuario que ingrese la URL y luego obtenemos el Client ID
+        
+        // Primero, intentar obtener el Client ID desde WordPress
+        try {
+            const clientId = await this.getGoogleClientId(cleanUrl);
+            if (!clientId) {
+                throw new Error('Google OAuth no está configurado en WordPress. Contacta al administrador.');
+            }
+            
+            // Construir URL de autorización
+            const redirectUri = encodeURIComponent('https://agencianarkan.github.io/plaza-headless/');
+            const scope = encodeURIComponent('openid email profile');
+            const responseType = 'code';
+            const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${encodeURIComponent(clientId)}&redirect_uri=${redirectUri}&response_type=${responseType}&scope=${scope}&access_type=offline&prompt=consent`;
+            
+            // Guardar baseUrl temporalmente para usar después del callback
+            sessionStorage.setItem('plaza_google_baseurl', cleanUrl);
+            
+            // Redirigir a Google
+            window.location.href = authUrl;
+            
+        } catch (error) {
+            console.error('Error iniciando Google OAuth:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Obtener Client ID de Google desde WordPress
+     */
+    async getGoogleClientId(baseUrl) {
+        try {
+            const cleanUrl = baseUrl.replace(/\/$/, '');
+            const response = await fetch(`${cleanUrl}/wp-json/plaza/v1/google-client-id`);
+            
+            if (!response.ok) {
+                if (response.status === 404) {
+                    throw new Error('Google OAuth no está configurado en WordPress. Contacta al administrador.');
+                }
+                throw new Error(`Error ${response.status}: ${response.statusText}`);
+            }
+            
+            const data = await response.json();
+            
+            if (!data.configured || !data.client_id) {
+                throw new Error('Google OAuth no está configurado en WordPress.');
+            }
+            
+            return data.client_id;
+        } catch (error) {
+            console.error('Error obteniendo Client ID:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Manejar callback de Google OAuth
+     * @param {string} code - Código de autorización de Google
+     * @param {string} baseUrl - URL base de WordPress
+     */
+    async handleGoogleCallback(code, baseUrl) {
+        if (!code || !baseUrl) {
+            throw new Error('Código y URL son requeridos');
+        }
+
+        const cleanUrl = baseUrl.replace(/\/$/, '');
+        const redirectUri = 'https://agencianarkan.github.io/plaza-headless/';
+
+        try {
+            // Enviar código a WordPress para intercambiarlo por credenciales
+            const response = await fetch(`${cleanUrl}/wp-json/plaza/v1/google-auth`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    code: code,
+                    redirect_uri: redirectUri
+                })
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                const errorMessage = errorData.message || `Error ${response.status}: ${response.statusText}`;
+                throw new Error(errorMessage);
+            }
+
+            const data = await response.json();
+
+            if (!data.success) {
+                throw new Error(data.message || 'Error en la autenticación');
+            }
+
+            // Guardar credenciales
+            this.saveCredentials(
+                data.baseUrl,
+                data.username,
+                data.password,
+                null, // userRole se obtendrá después
+                false // isAdmin se verificará después
+            );
+
+            this.isAuthenticated = true;
+
+            // Verificar rol de usuario (similar a authenticate normal)
+            try {
+                const wpUrl = `${cleanUrl}/wp-json/wp/v2/users/me?context=edit`;
+                const credentials = btoa(`${data.username}:${data.password}`);
+                const wpResponse = await fetch(wpUrl, {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': `Basic ${credentials}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                if (wpResponse.ok) {
+                    const userData = await wpResponse.json();
+                    let roles = userData.roles;
+                    
+                    if (!roles && userData.id) {
+                        try {
+                            const userByIdUrl = `${cleanUrl}/wp-json/wp/v2/users/${userData.id}?context=edit`;
+                            const userByIdResponse = await fetch(userByIdUrl, {
+                                method: 'GET',
+                                headers: {
+                                    'Authorization': `Basic ${credentials}`,
+                                    'Content-Type': 'application/json'
+                                }
+                            });
+                            
+                            if (userByIdResponse.ok) {
+                                const userByIdData = await userByIdResponse.json();
+                                roles = userByIdData.roles;
+                            }
+                        } catch (e) {
+                            console.warn('Error obteniendo usuario por ID:', e);
+                        }
+                    }
+                    
+                    const userRole = roles && roles.length > 0 ? roles[0] : null;
+                    const isAdmin = roles && roles.includes('administrator') 
+                        || (userData.id === 1 && userData.name === 'admin')
+                        || (userData.slug === 'admin');
+                    
+                    this.userRole = userRole;
+                    this.isAdmin = isAdmin;
+                    
+                    // Actualizar credenciales guardadas con rol
+                    this.saveCredentials(
+                        data.baseUrl,
+                        data.username,
+                        data.password,
+                        userRole,
+                        isAdmin
+                    );
+                }
+            } catch (e) {
+                console.warn('Error obteniendo rol de usuario:', e);
+            }
+
+            return true;
+        } catch (error) {
+            console.error('Error en callback de Google:', error);
+            throw error;
+        }
+    }
 }
 
 // Instancia global

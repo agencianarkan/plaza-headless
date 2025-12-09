@@ -20,7 +20,9 @@ Plaza es un panel de administración headless para WooCommerce que permite gesti
 - **Headless Architecture**: Frontend completamente separado del backend WordPress/WooCommerce
 - **Multi-sitio**: Funciona con múltiples sitios WooCommerce sin modificar el código
 - **Interfaz Moderna**: Diseño intuitivo y responsive
-- **Autenticación Segura**: Soporte para Application Passwords de WordPress
+- **Autenticación Dual**: 
+  - 🔵 **Google OAuth**: Inicio de sesión con un clic usando tu cuenta de Google
+  - 👤 **Usuario + Contraseña**: Método tradicional con soporte para Application Passwords
 - **Gestión Completa**: Productos, pedidos, clientes, reportes y envíos
 
 ## 🛠️ Tecnologías Utilizadas
@@ -83,6 +85,33 @@ Tienes varias opciones:
 
 ### Configurar Autenticación
 
+Plaza requiere autenticación para acceder a la API de WooCommerce. Tienes **2 métodos disponibles**:
+
+#### 🔵 Método 1: Google OAuth (Recomendado)
+
+Inicio de sesión rápido con un clic usando tu cuenta de Google.
+
+**Requisitos:**
+- El email de Google debe coincidir con un usuario existente en WordPress
+- El usuario debe tener rol de **Administrator** o **Shop Manager**
+
+**Configuración:**
+1. Sigue la guía completa en: [`GUIA_GOOGLE_OAUTH.md`](./GUIA_GOOGLE_OAUTH.md)
+2. Configura Google Cloud Console
+3. Instala y configura el plugin en WordPress
+
+**Ventajas:**
+- ✅ Un clic para iniciar sesión
+- ✅ Sin recordar contraseñas
+- ✅ Más seguro (no manejas contraseñas)
+- ✅ Application Password generado automáticamente
+
+#### 👤 Método 2: Usuario + Contraseña Tradicional
+
+Método tradicional con usuario y contraseña de WordPress.
+
+**Opciones de autenticación:**
+
 Plaza requiere autenticación para acceder a la API de WooCommerce. Tienes 3 opciones:
 
 #### Opción 1: Application Passwords (Recomendado - WordPress 5.6+)
@@ -120,12 +149,26 @@ El usuario debe tener uno de estos roles:
 
 ### Iniciar Sesión
 
+Plaza ofrece dos métodos para iniciar sesión:
+
+#### 🔵 Opción 1: Iniciar con Google
+
+1. Abre Plaza en tu navegador
+2. Ingresa la **URL de tu tienda WooCommerce**
+3. Haz clic en **"🔵 Iniciar con Google"**
+4. Autoriza en la pantalla de Google
+5. ¡Listo! Se iniciará sesión automáticamente
+
+**Nota:** El email de tu cuenta de Google debe coincidir con un usuario existente en WordPress.
+
+#### 👤 Opción 2: Usuario + Contraseña
+
 1. Abre Plaza en tu navegador
 2. Ingresa:
+   - **URL**: La URL de tu tienda WooCommerce
    - **Usuario**: Tu nombre de usuario de WordPress
    - **Contraseña**: Application Password o contraseña configurada
-   - **URL**: La URL de tu tienda WooCommerce
-3. Haz clic en "Iniciar Sesión"
+3. Haz clic en **"Iniciar Sesión"**
 
 ### Navegación
 
@@ -140,15 +183,16 @@ El usuario debe tener uno de estos roles:
 
 ```
 plaza-headless/
-├── index.html              # Página principal
-├── styles.css              # Estilos CSS
-├── app.js                  # Lógica principal de la aplicación
-├── api.js                  # Cliente API para WooCommerce
-├── auth.js                 # Manejo de autenticación
-├── plaza-upload-endpoint.php  # Plugin PHP para subir imágenes
-├── GUIA_AUTENTICACION.md   # Guía de configuración de autenticación
-├── INSTRUCCIONES_ENDPOINT.md  # Instrucciones del plugin PHP
-└── README.md               # Este archivo
+├── index.html                    # Página principal
+├── styles.css                    # Estilos CSS
+├── app.js                        # Lógica principal de la aplicación
+├── api.js                        # Cliente API para WooCommerce
+├── auth.js                       # Manejo de autenticación (Google OAuth + tradicional)
+├── plaza-upload-endpoint.php     # Plugin PHP (subir imágenes + Google OAuth)
+├── GUIA_GOOGLE_OAUTH.md          # Guía completa de Google OAuth (NUEVO)
+├── GUIA_AUTENTICACION.md         # Guía de configuración de autenticación tradicional
+├── INSTRUCCIONES_ENDPOINT.md     # Instrucciones del plugin PHP
+└── README.md                     # Este archivo
 ```
 
 ## 📊 Estado del Proyecto
@@ -156,11 +200,14 @@ plaza-headless/
 ### ✅ Funcionalidades Implementadas
 
 #### Autenticación
-- [x] Login con Basic Auth
+- [x] Login con Basic Auth (método tradicional)
+- [x] 🔵 Login con Google OAuth (nuevo)
 - [x] Soporte para Application Passwords
+- [x] Generación automática de Application Passwords con Google OAuth
 - [x] Detección automática de roles de usuario
 - [x] Menú condicional según permisos (Admin vs Shop Manager)
 - [x] Almacenamiento seguro de credenciales en LocalStorage
+- [x] Validación de email existente en WordPress (Google OAuth)
 
 #### Dashboard
 - [x] Vista general con estadísticas
@@ -345,12 +392,17 @@ plaza-headless/
 
 ### Endpoints Utilizados
 
+**WooCommerce API:**
 - `/wp-json/wc/v3/products` - Productos
 - `/wp-json/wc/v3/orders` - Pedidos
 - `/wp-json/wc/v3/customers` - Clientes
 - `/wp-json/wc/v3/shipping/zones` - Zonas de envío
 - `/wp-json/wc/v3/settings` - Configuración
-- `/wp-json/plaza/v1/upload-image` - Subir imágenes (endpoint personalizado)
+
+**Endpoints Personalizados (Plugin):**
+- `/wp-json/plaza/v1/upload-image` - Subir imágenes
+- `/wp-json/plaza/v1/google-client-id` - Obtener Client ID de Google (público)
+- `/wp-json/plaza/v1/google-auth` - Autenticación con Google OAuth (público)
 
 ### Compatibilidad
 

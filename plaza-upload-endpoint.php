@@ -1,8 +1,8 @@
 <?php
 /**
  * Plugin Name: Plaza Upload Endpoint
- * Description: Endpoint personalizado para subir imágenes desde Plaza
- * Version: 1.0
+ * Description: Endpoint personalizado para subir imágenes desde Plaza y autenticación con Google OAuth
+ * Version: 2.0
  * Author: Plaza
  */
 
@@ -15,6 +15,7 @@ if (!defined('ABSPATH')) {
  * Registrar endpoint personalizado para subir imágenes
  */
 add_action('rest_api_init', function() {
+    // Endpoint para subir imágenes
     register_rest_route('plaza/v1', '/upload-image', array(
         'methods' => 'POST',
         'callback' => 'plaza_upload_image',
@@ -32,7 +33,113 @@ add_action('rest_api_init', function() {
             ),
         ),
     ));
+    
+    // Endpoint para obtener Client ID de Google (público)
+    register_rest_route('plaza/v1', '/google-client-id', array(
+        'methods' => 'GET',
+        'callback' => 'plaza_get_google_client_id',
+        'permission_callback' => '__return_true', // Público
+    ));
+    
+    // Endpoint para autenticación con Google OAuth
+    register_rest_route('plaza/v1', '/google-auth', array(
+        'methods' => 'POST',
+        'callback' => 'plaza_google_auth',
+        'permission_callback' => '__return_true', // Público, validamos después
+        'args' => array(
+            'code' => array(
+                'required' => true,
+                'type' => 'string',
+                'description' => 'Authorization code from Google',
+            ),
+            'redirect_uri' => array(
+                'required' => true,
+                'type' => 'string',
+                'description' => 'Redirect URI used in OAuth flow',
+            ),
+        ),
+    ));
 });
+
+// Agregar menú de configuración en WordPress Admin
+add_action('admin_menu', 'plaza_add_admin_menu');
+add_action('admin_init', 'plaza_settings_init');
+
+function plaza_add_admin_menu() {
+    add_options_page(
+        'Plaza Settings',
+        'Plaza',
+        'manage_options',
+        'plaza-settings',
+        'plaza_options_page'
+    );
+}
+
+function plaza_settings_init() {
+    register_setting('plaza_settings', 'plaza_google_client_id');
+    register_setting('plaza_settings', 'plaza_google_client_secret');
+    
+    add_settings_section(
+        'plaza_google_section',
+        'Configuración de Google OAuth',
+        'plaza_google_section_callback',
+        'plaza-settings'
+    );
+    
+    add_settings_field(
+        'plaza_google_client_id',
+        'Google Client ID',
+        'plaza_google_client_id_render',
+        'plaza-settings',
+        'plaza_google_section'
+    );
+    
+    add_settings_field(
+        'plaza_google_client_secret',
+        'Google Client Secret',
+        'plaza_google_client_secret_render',
+        'plaza-settings',
+        'plaza_google_section'
+    );
+}
+
+function plaza_google_section_callback() {
+    echo '<p>Configura las credenciales de Google OAuth para permitir inicio de sesión con Google en Plaza.</p>';
+    echo '<p><strong>Instrucciones:</strong></p>';
+    echo '<ol>';
+    echo '<li>Ve a <a href="https://console.cloud.google.com/" target="_blank">Google Cloud Console</a></li>';
+    echo '<li>Crea un proyecto o selecciona uno existente</li>';
+    echo '<li>Habilita "Google+ API" o "Google Identity API"</li>';
+    echo '<li>Crea credenciales OAuth 2.0 (tipo: Aplicación web)</li>';
+    echo '<li>Copia el Client ID y Client Secret aquí</li>';
+    echo '<li>Configura la URL de redirección: <code>https://agencianarkan.github.io/plaza-headless/</code></li>';
+    echo '</ol>';
+}
+
+function plaza_google_client_id_render() {
+    $value = get_option('plaza_google_client_id', '');
+    echo '<input type="text" name="plaza_google_client_id" value="' . esc_attr($value) . '" class="regular-text">';
+}
+
+function plaza_google_client_secret_render() {
+    $value = get_option('plaza_google_client_secret', '');
+    echo '<input type="password" name="plaza_google_client_secret" value="' . esc_attr($value) . '" class="regular-text">';
+}
+
+function plaza_options_page() {
+    ?>
+    <div class="wrap">
+        <h1>Configuración de Plaza</h1>
+        <form action="options.php" method="post">
+            <?php
+            settings_fields('plaza_settings');
+            do_settings_sections('plaza-settings');
+            submit_button();
+            ?>
+        </form>
+    </div>
+    <?php
+}
 
 /**
  * Verificar permisos del usuario
@@ -121,5 +228,182 @@ function plaza_upload_image($request) {
         'id' => $attach_id,
         'message' => 'Imagen subida exitosamente'
     );
+}
+
+/**
+ * Obtener Client ID de Google (público)
+ */
+function plaza_get_google_client_id() {
+    $client_id = get_option('plaza_google_client_id', '');
+    
+    if (empty($client_id)) {
+        return new WP_Error('not_configured', 'Google OAuth no está configurado', array('status' => 404));
+    }
+    
+    return array(
+        'client_id' => $client_id,
+        'configured' => true
+    );
+}
+
+/**
+ * Autenticación con Google OAuth
+ */
+function plaza_google_auth($request) {
+    $code = $request->get_param('code');
+    $redirect_uri = $request->get_param('redirect_uri');
+    
+    if (empty($code) || empty($redirect_uri)) {
+        return new WP_Error('missing_params', 'Código y redirect_uri son requeridos', array('status' => 400));
+    }
+    
+    // Obtener credenciales de Google
+    $client_id = get_option('plaza_google_client_id', '');
+    $client_secret = get_option('plaza_google_client_secret', '');
+    
+    if (empty($client_id) || empty($client_secret)) {
+        return new WP_Error('not_configured', 'Google OAuth no está configurado. Contacta al administrador.', array('status' => 500));
+    }
+    
+    // Paso 1: Intercambiar código por token
+    $token_data = plaza_exchange_code_for_token($code, $client_id, $client_secret, $redirect_uri);
+    
+    if (is_wp_error($token_data)) {
+        return $token_data;
+    }
+    
+    $access_token = $token_data['access_token'];
+    
+    // Paso 2: Obtener información del usuario desde Google
+    $user_info = plaza_get_google_user_info($access_token);
+    
+    if (is_wp_error($user_info)) {
+        return $user_info;
+    }
+    
+    $email = $user_info['email'];
+    
+    // Paso 3: Buscar usuario en WordPress por email
+    $user = get_user_by('email', $email);
+    
+    if (!$user) {
+        return new WP_Error('user_not_found', 'Este email no está registrado en WordPress. Contacta al administrador.', array('status' => 404));
+    }
+    
+    // Paso 4: Generar Application Password
+    $app_password = plaza_generate_application_password($user->ID);
+    
+    if (is_wp_error($app_password)) {
+        return $app_password;
+    }
+    
+    // Paso 5: Obtener URL base del sitio
+    $base_url = home_url();
+    
+    // Devolver credenciales
+    return array(
+        'success' => true,
+        'username' => $user->user_login,
+        'password' => $app_password,
+        'baseUrl' => $base_url,
+        'email' => $email,
+        'message' => 'Autenticación exitosa'
+    );
+}
+
+/**
+ * Intercambiar código de autorización por access token
+ */
+function plaza_exchange_code_for_token($code, $client_id, $client_secret, $redirect_uri) {
+    $token_url = 'https://oauth2.googleapis.com/token';
+    
+    $body = array(
+        'code' => $code,
+        'client_id' => $client_id,
+        'client_secret' => $client_secret,
+        'redirect_uri' => $redirect_uri,
+        'grant_type' => 'authorization_code'
+    );
+    
+    $response = wp_remote_post($token_url, array(
+        'body' => $body,
+        'timeout' => 30
+    ));
+    
+    if (is_wp_error($response)) {
+        return new WP_Error('token_exchange_failed', 'Error al intercambiar código por token: ' . $response->get_error_message(), array('status' => 500));
+    }
+    
+    $response_code = wp_remote_retrieve_response_code($response);
+    $response_body = wp_remote_retrieve_body($response);
+    $data = json_decode($response_body, true);
+    
+    if ($response_code !== 200) {
+        $error_message = isset($data['error_description']) ? $data['error_description'] : 'Error desconocido';
+        return new WP_Error('token_exchange_failed', 'Error de Google: ' . $error_message, array('status' => $response_code));
+    }
+    
+    if (!isset($data['access_token'])) {
+        return new WP_Error('token_exchange_failed', 'No se recibió access_token de Google', array('status' => 500));
+    }
+    
+    return $data;
+}
+
+/**
+ * Obtener información del usuario desde Google
+ */
+function plaza_get_google_user_info($access_token) {
+    $user_info_url = 'https://www.googleapis.com/oauth2/v2/userinfo';
+    
+    $response = wp_remote_get($user_info_url, array(
+        'headers' => array(
+            'Authorization' => 'Bearer ' . $access_token
+        ),
+        'timeout' => 30
+    ));
+    
+    if (is_wp_error($response)) {
+        return new WP_Error('user_info_failed', 'Error al obtener información del usuario: ' . $response->get_error_message(), array('status' => 500));
+    }
+    
+    $response_code = wp_remote_retrieve_response_code($response);
+    $response_body = wp_remote_retrieve_body($response);
+    $data = json_decode($response_body, true);
+    
+    if ($response_code !== 200) {
+        $error_message = isset($data['error']['message']) ? $data['error']['message'] : 'Error desconocido';
+        return new WP_Error('user_info_failed', 'Error de Google: ' . $error_message, array('status' => $response_code));
+    }
+    
+    if (!isset($data['email'])) {
+        return new WP_Error('user_info_failed', 'No se pudo obtener el email del usuario', array('status' => 500));
+    }
+    
+    return $data;
+}
+
+/**
+ * Generar Application Password para un usuario
+ */
+function plaza_generate_application_password($user_id) {
+    // Verificar que WordPress soporte Application Passwords (5.6+)
+    if (!function_exists('wp_create_application_password')) {
+        // Si no está disponible, usar método alternativo o devolver error
+        return new WP_Error('app_password_not_supported', 'Application Passwords no está disponible. WordPress 5.6+ requerido.', array('status' => 500));
+    }
+    
+    // Crear nombre único para la aplicación
+    $app_name = 'Plaza - ' . date('Y-m-d H:i:s');
+    
+    // Generar Application Password
+    $new_password = wp_create_application_password($user_id, array('name' => $app_name));
+    
+    if (is_wp_error($new_password)) {
+        return $new_password;
+    }
+    
+    // El formato es: "xxxx xxxx xxxx xxxx" (sin espacios para Basic Auth)
+    return str_replace(' ', '', $new_password);
 }
 
