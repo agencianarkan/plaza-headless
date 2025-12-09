@@ -167,61 +167,146 @@ function setupEventListeners() {
         });
     }
     
-    // Logout
-    document.getElementById('logout-btn').addEventListener('click', handleLogout);
+    // Logout (solo si existe)
+    const logoutBtn = document.getElementById('logout-btn');
+    if (logoutBtn) {
+        logoutBtn.addEventListener('click', handleLogout);
+    }
     
-    // Navegación
-    document.querySelectorAll('.nav-link').forEach(link => {
-        link.addEventListener('click', (e) => {
-            e.preventDefault();
-            const page = e.target.getAttribute('data-page');
-            navigateToPage(page);
+    // Navegación (solo si existe)
+    const navLinks = document.querySelectorAll('.nav-link');
+    if (navLinks.length > 0) {
+        navLinks.forEach(link => {
+            link.addEventListener('click', (e) => {
+                e.preventDefault();
+                const page = e.target.getAttribute('data-page');
+                navigateToPage(page);
+            });
         });
-    });
+    }
 
-    // Clientes
-    document.getElementById('customer-search').addEventListener('input', debounce(loadCustomers, 500));
+    // Clientes (solo si existe)
+    const customerSearch = document.getElementById('customer-search');
+    if (customerSearch) {
+        customerSearch.addEventListener('input', debounce(loadCustomers, 500));
+    }
     
-    // Reportes
-    document.getElementById('update-report-btn').addEventListener('click', loadReports);
-    document.getElementById('reset-report-btn').addEventListener('click', resetReportDates);
+    // Reportes (solo si existe)
+    const updateReportBtn = document.getElementById('update-report-btn');
+    if (updateReportBtn) {
+        updateReportBtn.addEventListener('click', loadReports);
+    }
+    const resetReportBtn = document.getElementById('reset-report-btn');
+    if (resetReportBtn) {
+        resetReportBtn.addEventListener('click', resetReportDates);
+    }
     
     // Configuración - los event listeners se agregarán dinámicamente
 
-    // Productos
-    document.getElementById('new-product-btn').addEventListener('click', async () => await openProductModal());
-    document.getElementById('product-form').addEventListener('submit', handleProductSubmit);
-    document.getElementById('product-form-cancel').addEventListener('click', closeProductModal);
-    document.getElementById('product-modal-close').addEventListener('click', closeProductModal);
-    document.getElementById('product-search').addEventListener('input', debounce(loadProducts, 500));
-    document.getElementById('product-status-filter').addEventListener('change', loadProducts);
-    document.getElementById('add-image-btn').addEventListener('click', addImageFromUrl);
-    document.getElementById('product-image-url').addEventListener('keypress', (e) => {
-        if (e.key === 'Enter') {
-            e.preventDefault();
-            addImageFromUrl();
-        }
-    });
-    document.getElementById('product-image-file').addEventListener('change', handleFileUpload);
-    document.getElementById('delete-product-btn').addEventListener('click', handleDeleteProductFromModal);
+    // Productos (solo si existe)
+    const newProductBtn = document.getElementById('new-product-btn');
+    if (newProductBtn) {
+        newProductBtn.addEventListener('click', async () => await openProductModal());
+    }
     
-    // Editor de texto enriquecido
-    setupRichEditors();
+    const productForm = document.getElementById('product-form');
+    if (productForm) {
+        productForm.addEventListener('submit', handleProductSubmit);
+    }
+    
+    const productFormCancel = document.getElementById('product-form-cancel');
+    if (productFormCancel) {
+        productFormCancel.addEventListener('click', closeProductModal);
+    }
+    
+    const productModalClose = document.getElementById('product-modal-close');
+    if (productModalClose) {
+        productModalClose.addEventListener('click', closeProductModal);
+    }
+    
+    const productSearch = document.getElementById('product-search');
+    if (productSearch) {
+        productSearch.addEventListener('input', debounce(loadProducts, 500));
+    }
+    
+    const productStatusFilter = document.getElementById('product-status-filter');
+    if (productStatusFilter) {
+        productStatusFilter.addEventListener('change', loadProducts);
+    }
+    
+    const addImageBtn = document.getElementById('add-image-btn');
+    if (addImageBtn) {
+        addImageBtn.addEventListener('click', addImageFromUrl);
+    }
+    
+    const productImageUrl = document.getElementById('product-image-url');
+    if (productImageUrl) {
+        productImageUrl.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                addImageFromUrl();
+            }
+        });
+    }
+    
+    const productImageFile = document.getElementById('product-image-file');
+    if (productImageFile) {
+        productImageFile.addEventListener('change', handleFileUpload);
+    }
+    
+    const deleteProductBtn = document.getElementById('delete-product-btn');
+    if (deleteProductBtn) {
+        deleteProductBtn.addEventListener('click', handleDeleteProductFromModal);
+    }
+    
+    // Editor de texto enriquecido (solo si existe)
+    try {
+        setupRichEditors();
+    } catch (e) {
+        // Si no existe, no pasa nada
+        console.log('Rich editors no disponibles');
+    }
 
-    // Pedidos
-    document.getElementById('order-search').addEventListener('input', debounce(loadOrders, 500));
-    document.getElementById('order-status-filter').addEventListener('change', loadOrders);
-    document.getElementById('order-status-form').addEventListener('submit', handleOrderStatusSubmit);
-    document.getElementById('order-status-form-cancel').addEventListener('click', closeOrderStatusModal);
-    document.getElementById('order-status-modal-close').addEventListener('click', closeOrderStatusModal);
+    // Pedidos (solo si existe)
+    const orderSearch = document.getElementById('order-search');
+    if (orderSearch) {
+        orderSearch.addEventListener('input', debounce(loadOrders, 500));
+    }
+    
+    const orderStatusFilter = document.getElementById('order-status-filter');
+    if (orderStatusFilter) {
+        orderStatusFilter.addEventListener('change', loadOrders);
+    }
+    
+    const orderStatusForm = document.getElementById('order-status-form');
+    if (orderStatusForm) {
+        orderStatusForm.addEventListener('submit', handleOrderStatusSubmit);
+    }
+    
+    const orderStatusFormCancel = document.getElementById('order-status-form-cancel');
+    if (orderStatusFormCancel) {
+        orderStatusFormCancel.addEventListener('click', closeOrderStatusModal);
+    }
+    
+    const orderStatusModalClose = document.getElementById('order-status-modal-close');
+    if (orderStatusModalClose) {
+        orderStatusModalClose.addEventListener('click', closeOrderStatusModal);
+    }
 
-    // Cerrar modales al hacer click fuera
-    document.getElementById('product-modal').addEventListener('click', (e) => {
-        if (e.target.id === 'product-modal') closeProductModal();
-    });
-    document.getElementById('order-status-modal').addEventListener('click', (e) => {
-        if (e.target.id === 'order-status-modal') closeOrderStatusModal();
-    });
+    // Cerrar modales al hacer click fuera (solo si existen)
+    const productModal = document.getElementById('product-modal');
+    if (productModal) {
+        productModal.addEventListener('click', (e) => {
+            if (e.target.id === 'product-modal') closeProductModal();
+        });
+    }
+    
+    const orderStatusModal = document.getElementById('order-status-modal');
+    if (orderStatusModal) {
+        orderStatusModal.addEventListener('click', (e) => {
+            if (e.target.id === 'order-status-modal') closeOrderStatusModal();
+        });
+    }
 }
 
 // ========== AUTENTICACIÓN ==========
