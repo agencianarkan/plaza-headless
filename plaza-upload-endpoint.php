@@ -387,10 +387,52 @@ function plaza_get_google_user_info($access_token) {
  * Generar Application Password para un usuario
  */
 function plaza_generate_application_password($user_id) {
-    // Verificar que WordPress soporte Application Passwords (5.6+)
+    // Asegurar que las funciones de Application Passwords estén cargadas
     if (!function_exists('wp_create_application_password')) {
-        // Si no está disponible, usar método alternativo o devolver error
-        return new WP_Error('app_password_not_supported', 'Application Passwords no está disponible. WordPress 5.6+ requerido.', array('status' => 500));
+        // Intentar cargar el archivo que contiene Application Passwords
+        require_once(ABSPATH . 'wp-includes/user.php');
+        
+        // Verificar nuevamente después de cargar
+        if (!function_exists('wp_create_application_password')) {
+            $wordpress_version = get_bloginfo('version');
+            
+            // Verificar si hay un plugin que deshabilite Application Passwords
+            $disabled_by_plugin = false;
+            if (has_filter('wp_is_application_passwords_available')) {
+                $disabled_by_plugin = !apply_filters('wp_is_application_passwords_available', true);
+            }
+            
+            $error_message = 'Application Passwords no está disponible. ';
+            $error_message .= 'Tu WordPress es versión ' . $wordpress_version . '. ';
+            
+            if ($disabled_by_plugin) {
+                $error_message .= 'Parece que un plugin está deshabilitando Application Passwords. ';
+            }
+            
+            $error_message .= 'Se requiere WordPress 5.6 o superior. ';
+            $error_message .= 'Si estás en WordPress 6+, verifica que no haya plugins deshabilitando esta funcionalidad.';
+            
+            return new WP_Error(
+                'app_password_not_supported', 
+                $error_message, 
+                array(
+                    'status' => 500,
+                    'wordpress_version' => $wordpress_version,
+                    'required_version' => '5.6',
+                    'function_exists' => function_exists('wp_create_application_password'),
+                    'disabled_by_plugin' => $disabled_by_plugin
+                )
+            );
+        }
+    }
+    
+    // Verificar que Application Passwords esté disponible para el usuario
+    if (!wp_is_application_passwords_available_for_user($user_id)) {
+        return new WP_Error(
+            'app_password_not_available_for_user',
+            'Application Passwords no está disponible para este usuario. Verifica la configuración del usuario.',
+            array('status' => 403)
+        );
     }
     
     // Crear nombre único para la aplicación
@@ -400,7 +442,15 @@ function plaza_generate_application_password($user_id) {
     $new_password = wp_create_application_password($user_id, array('name' => $app_name));
     
     if (is_wp_error($new_password)) {
-        return $new_password;
+        // Mejorar el mensaje de error
+        $error_code = $new_password->get_error_code();
+        $error_message = $new_password->get_error_message();
+        
+        return new WP_Error(
+            $error_code,
+            'Error al generar Application Password: ' . $error_message,
+            array('status' => 500)
+        );
     }
     
     // El formato es: "xxxx xxxx xxxx xxxx" (sin espacios para Basic Auth)
