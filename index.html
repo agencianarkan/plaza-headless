@@ -14,8 +14,14 @@
                 <h1>🛍️ Plaza</h1>
                 <p class="subtitle">Panel de Administración WooCommerce</p>
                 
+                <!-- Campo de URL -->
+                <div class="form-group">
+                    <label for="woocommerce-url">URL de tu tienda WooCommerce</label>
+                    <input type="url" id="woocommerce-url" name="woocommerce-url" placeholder="https://tutienda.com" required>
+                </div>
+                
                 <!-- Botón de Google OAuth -->
-                <div class="form-group" style="margin-bottom: 25px;">
+                <div class="form-group" style="margin-top: 25px; margin-bottom: 15px;">
                     <button type="button" id="google-login-btn" class="btn btn-primary btn-block" style="background: #4285f4; display: flex; align-items: center; justify-content: center; gap: 10px;">
                         <svg width="18" height="18" viewBox="0 0 18 18" xmlns="http://www.w3.org/2000/svg">
                             <g fill="#000" fill-rule="evenodd">
@@ -29,33 +35,7 @@
                     </button>
                 </div>
                 
-                <!-- Separador -->
-                <div style="display: flex; align-items: center; margin: 25px 0; color: var(--text-secondary);">
-                    <div style="flex: 1; height: 1px; background: var(--border-color);"></div>
-                    <span style="padding: 0 15px; font-size: 0.875rem;">o</span>
-                    <div style="flex: 1; height: 1px; background: var(--border-color);"></div>
-                </div>
-                
-                <!-- Formulario tradicional -->
-                <form id="login-form">
-                    <div class="form-group">
-                        <label for="woocommerce-url">URL de tu tienda WooCommerce</label>
-                        <input type="url" id="woocommerce-url" name="woocommerce-url" placeholder="https://tutienda.com" required>
-                    </div>
-                    <div class="form-group">
-                        <label for="username">Usuario</label>
-                        <input type="text" id="username" name="username" required autocomplete="username">
-                    </div>
-                    <div class="form-group">
-                        <label for="password">Contraseña</label>
-                        <input type="password" id="password" name="password" required autocomplete="current-password">
-                    </div>
-                    <div class="info-box" style="background: #eff6ff; border-left: 4px solid #3b82f6; padding: 12px; margin-bottom: 20px; border-radius: 4px; font-size: 0.875rem;">
-                        <strong>💡 Tip:</strong> Si usas WordPress 5.6+, puedes usar <strong>Application Passwords</strong> en lugar de tu contraseña normal. Ve a tu perfil de usuario en WordPress para crear una.
-                    </div>
-                    <button type="submit" class="btn btn-primary btn-block">Iniciar Sesión</button>
-                    <div id="login-error" class="error-message"></div>
-                </form>
+                <div id="login-error" class="error-message"></div>
             </div>
         </div>
     </div>

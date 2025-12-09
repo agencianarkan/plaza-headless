@@ -150,13 +150,21 @@ async function checkAndShowShippingMenu() {
 
 // Event Listeners
 function setupEventListeners() {
-    // Login
-    document.getElementById('login-form').addEventListener('submit', handleLogin);
-    
-    // Google OAuth Login
+    // Google OAuth Login (único método de autenticación)
     const googleLoginBtn = document.getElementById('google-login-btn');
     if (googleLoginBtn) {
         googleLoginBtn.addEventListener('click', handleGoogleLogin);
+    }
+    
+    // Permitir iniciar sesión con Enter en el campo de URL
+    const urlInput = document.getElementById('woocommerce-url');
+    if (urlInput) {
+        urlInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                handleGoogleLogin();
+            }
+        });
     }
     
     // Logout
@@ -217,40 +225,8 @@ function setupEventListeners() {
 }
 
 // ========== AUTENTICACIÓN ==========
-
-async function handleLogin(e) {
-    e.preventDefault();
-    const errorDiv = document.getElementById('login-error');
-    errorDiv.textContent = '';
-    errorDiv.classList.remove('show');
-
-    const username = document.getElementById('username').value;
-    const password = document.getElementById('password').value;
-    const baseUrl = document.getElementById('woocommerce-url').value;
-
-    try {
-        showToast('Autenticando...', 'success');
-        await auth.authenticate(baseUrl, username, password);
-        wcAPI.init(auth.getBaseUrl());
-        
-        const userInfo = document.getElementById('user-info');
-        userInfo.textContent = `Usuario: ${username}`;
-        
-        showDashboard();
-        loadDashboard();
-        
-        // Verificar y mostrar menú de envíos después de un breve delay
-        setTimeout(() => {
-            checkAndShowShippingMenu();
-        }, 500);
-        
-        showToast('¡Bienvenido!', 'success');
-    } catch (error) {
-        errorDiv.textContent = error.message;
-        errorDiv.classList.add('show');
-        showToast('Error de autenticación', 'error');
-    }
-}
+// Nota: Solo se permite autenticación con Google OAuth.
+// El método tradicional de usuario/contraseña ha sido deshabilitado.
 
 // ========== GOOGLE OAUTH ==========
 
