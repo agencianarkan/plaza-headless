@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Plaza Upload Endpoint
  * Description: Endpoint personalizado para subir imágenes desde Plaza y autenticación con Google OAuth
- * Version: 2.0
+ * Version: 2.1
  * Author: Plaza
  */
 
@@ -12,38 +12,7 @@ if (!defined('ABSPATH')) {
 }
 
 /**
- * Obtener headers HTTP (compatible con todos los servidores)
- * Definir primero para que esté disponible en todos los hooks
- */
-function plaza_get_all_headers() {
-    if (function_exists('getallheaders')) {
-        $headers = getallheaders();
-        if ($headers) {
-            return $headers;
-        }
-    }
-    
-    // Fallback para servidores que no tienen getallheaders()
-    $headers = array();
-    foreach ($_SERVER as $name => $value) {
-        if (substr($name, 0, 5) == 'HTTP_') {
-            $header_name = str_replace(' ', '-', ucwords(strtolower(str_replace('_', ' ', substr($name, 5)))));
-            $headers[$header_name] = $value;
-        }
-    }
-    
-    // También verificar Authorization directamente
-    if (isset($_SERVER['HTTP_AUTHORIZATION'])) {
-        $headers['Authorization'] = $_SERVER['HTTP_AUTHORIZATION'];
-    } elseif (isset($_SERVER['REDIRECT_HTTP_AUTHORIZATION'])) {
-        $headers['Authorization'] = $_SERVER['REDIRECT_HTTP_AUTHORIZATION'];
-    }
-    
-    return $headers;
-}
-
-/**
- * Agregar headers CORS - Función helper
+ * Agregar headers CORS de forma simple
  */
 function plaza_add_cors_headers() {
     $allowed_origins = array(
@@ -65,64 +34,42 @@ function plaza_add_cors_headers() {
 }
 
 /**
- * Agregar headers CORS antes de servir respuesta REST
+ * Manejar OPTIONS requests para CORS
  */
-add_filter('rest_pre_serve_request', function($served, $result, $request, $server) {
-    // Solo agregar headers para endpoints de Plaza
-    if (is_object($request) && method_exists($request, 'get_route')) {
-        $route = $request->get_route();
-        if (!empty($route) && strpos($route, '/plaza/v1/') !== false) {
-            plaza_add_cors_headers();
-        }
-    }
-    return $served;
-}, 10, 4);
-
-/**
- * Registrar endpoint personalizado para subir imágenes
- */
-add_action('rest_api_init', function() {
-    // Manejar peticiones OPTIONS (preflight) para CORS
+add_action('init', function() {
     if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS' && 
         isset($_SERVER['REQUEST_URI']) && 
         strpos($_SERVER['REQUEST_URI'], '/wp-json/plaza/v1/') !== false) {
         plaza_add_cors_headers();
-        status_header(200);
+        http_response_code(200);
         exit();
     }
+}, 1);
+
+/**
+ * Registrar endpoints REST
+ */
+add_action('rest_api_init', function() {
+    // Agregar CORS a todas las respuestas REST de Plaza
+    add_filter('rest_pre_serve_request', function($served, $result, $request) {
+        if (is_object($request) && method_exists($request, 'get_route')) {
+            $route = $request->get_route();
+            if (!empty($route) && strpos($route, '/plaza/v1/') !== false) {
+                plaza_add_cors_headers();
+            }
+        }
+        return $served;
+    }, 10, 3);
     
-    // Endpoint para subir imágenes
-    register_rest_route('plaza/v1', '/upload-image', array(
-        'methods' => 'POST',
-        'callback' => 'plaza_upload_image',
-        'permission_callback' => 'plaza_check_permissions',
-        'args' => array(
-            'file' => array(
-                'required' => true,
-                'type' => 'string',
-                'description' => 'Base64 encoded image file',
-            ),
-            'filename' => array(
-                'required' => false,
-                'type' => 'string',
-                'default' => 'image.jpg',
-            ),
-        ),
-    ));
-    
-    // Endpoint para obtener Client ID de Google (público)
+    // Endpoint para obtener Client ID de Google
     register_rest_route('plaza/v1', '/google-client-id', array(
         'methods' => 'GET',
-        'callback' => 'plaza_get_google_client_id',
-        'permission_callback' => '__return_true', // Público
-    ));
-    
-    // Endpoint de prueba para diagnosticar
-    register_rest_route('plaza/v1', '/test', array(
-        'methods' => 'GET',
         'callback' => function() {
-            plaza_add_cors_headers();
-            return array('success' => true, 'message' => 'Endpoint funciona');
+            $client_id = get_option('plaza_google_client_id', '');
+            if (empty($client_id)) {
+                return new WP_Error('not_configured', 'Google OAuth no está configurado', array('status' => 404));
+            }
+            return array('client_id' => $client_id);
         },
         'permission_callback' => '__return_true',
     ));
@@ -131,483 +78,161 @@ add_action('rest_api_init', function() {
     register_rest_route('plaza/v1', '/google-auth', array(
         'methods' => 'POST',
         'callback' => 'plaza_google_auth',
-        'permission_callback' => '__return_true', // Público, validamos después
-        'args' => array(
-            'code' => array(
-                'required' => true,
-                'type' => 'string',
-                'description' => 'Authorization code from Google',
-            ),
-            'redirect_uri' => array(
-                'required' => true,
-                'type' => 'string',
-                'description' => 'Redirect URI used in OAuth flow',
-            ),
-        ),
+        'permission_callback' => '__return_true',
+    ));
+    
+    // Endpoint para subir imágenes
+    register_rest_route('plaza/v1', '/upload-image', array(
+        'methods' => 'POST',
+        'callback' => 'plaza_upload_image',
+        'permission_callback' => 'plaza_check_permissions',
     ));
 });
 
-// Las funciones se definen después, pero los hooks se registran aquí
-// Middleware: Interceptar peticiones REST para validar tokens JWT
-add_filter('rest_authentication_errors', 'plaza_rest_authentication', 10, 2);
+/**
+ * Menú de configuración
+ */
+add_action('admin_menu', function() {
+    add_options_page('Plaza Settings', 'Plaza', 'manage_options', 'plaza-settings', 'plaza_options_page');
+});
 
-// Agregar menú de configuración en WordPress Admin
-add_action('admin_menu', 'plaza_add_admin_menu');
-add_action('admin_init', 'plaza_settings_init');
-
-function plaza_add_admin_menu() {
-    add_options_page(
-        'Plaza Settings',
-        'Plaza',
-        'manage_options',
-        'plaza-settings',
-        'plaza_options_page'
-    );
-}
-
-function plaza_settings_init() {
+add_action('admin_init', function() {
     register_setting('plaza_settings', 'plaza_google_client_id');
     register_setting('plaza_settings', 'plaza_google_client_secret');
     
-    add_settings_section(
-        'plaza_google_section',
-        'Configuración de Google OAuth',
-        'plaza_google_section_callback',
-        'plaza-settings'
-    );
+    add_settings_section('plaza_google_section', 'Configuración de Google OAuth', function() {
+        echo '<p>Configura las credenciales de Google OAuth.</p>';
+        echo '<ol>';
+        echo '<li>Ve a <a href="https://console.cloud.google.com/" target="_blank">Google Cloud Console</a></li>';
+        echo '<li>Crea un proyecto y habilita "Google Identity API"</li>';
+        echo '<li>Crea credenciales OAuth 2.0 (Aplicación web)</li>';
+        echo '<li>Configura la URL de redirección: <code>https://agencianarkan.github.io/plaza-headless/</code></li>';
+        echo '</ol>';
+    }, 'plaza-settings');
     
-    add_settings_field(
-        'plaza_google_client_id',
-        'Google Client ID',
-        'plaza_google_client_id_render',
-        'plaza-settings',
-        'plaza_google_section'
-    );
+    add_settings_field('plaza_google_client_id', 'Google Client ID', function() {
+        $value = get_option('plaza_google_client_id', '');
+        echo '<input type="text" name="plaza_google_client_id" value="' . esc_attr($value) . '" class="regular-text">';
+    }, 'plaza-settings', 'plaza_google_section');
     
-    add_settings_field(
-        'plaza_google_client_secret',
-        'Google Client Secret',
-        'plaza_google_client_secret_render',
-        'plaza-settings',
-        'plaza_google_section'
-    );
-}
-
-function plaza_google_section_callback() {
-    echo '<p>Configura las credenciales de Google OAuth para permitir inicio de sesión con Google en Plaza.</p>';
-    echo '<p><strong>Instrucciones:</strong></p>';
-    echo '<ol>';
-    echo '<li>Ve a <a href="https://console.cloud.google.com/" target="_blank">Google Cloud Console</a></li>';
-    echo '<li>Crea un proyecto o selecciona uno existente</li>';
-    echo '<li>Habilita "Google+ API" o "Google Identity API"</li>';
-    echo '<li>Crea credenciales OAuth 2.0 (tipo: Aplicación web)</li>';
-    echo '<li>Copia el Client ID y Client Secret aquí</li>';
-    echo '<li>Configura la URL de redirección: <code>https://agencianarkan.github.io/plaza-headless/</code></li>';
-    echo '</ol>';
-}
-
-function plaza_google_client_id_render() {
-    $value = get_option('plaza_google_client_id', '');
-    echo '<input type="text" name="plaza_google_client_id" value="' . esc_attr($value) . '" class="regular-text">';
-}
-
-function plaza_google_client_secret_render() {
-    $value = get_option('plaza_google_client_secret', '');
-    echo '<input type="password" name="plaza_google_client_secret" value="' . esc_attr($value) . '" class="regular-text">';
-}
+    add_settings_field('plaza_google_client_secret', 'Google Client Secret', function() {
+        $value = get_option('plaza_google_client_secret', '');
+        echo '<input type="password" name="plaza_google_client_secret" value="' . esc_attr($value) . '" class="regular-text">';
+    }, 'plaza-settings', 'plaza_google_section');
+});
 
 function plaza_options_page() {
     ?>
     <div class="wrap">
         <h1>Configuración de Plaza</h1>
         <form action="options.php" method="post">
-            <?php
-            settings_fields('plaza_settings');
-            do_settings_sections('plaza-settings');
-            submit_button();
-            ?>
+            <?php settings_fields('plaza_settings'); ?>
+            <?php do_settings_sections('plaza-settings'); ?>
+            <?php submit_button(); ?>
         </form>
     </div>
     <?php
-}
-
-
-/**
- * Middleware: Validar tokens JWT en peticiones REST
- */
-function plaza_rest_authentication($result, $server) {
-    // Si ya hay un resultado (autenticación exitosa o error específico), no interferir
-    if (!empty($result)) {
-        return $result;
-    }
-    
-    // Solo procesar peticiones a la API de WooCommerce
-    $request_uri = isset($_SERVER['REQUEST_URI']) ? $_SERVER['REQUEST_URI'] : '';
-    if (strpos($request_uri, '/wp-json/wc/v3/') === false) {
-        return $result; // No es una petición a WooCommerce, dejar pasar
-    }
-    
-    // Verificar que las funciones necesarias existan
-    if (!function_exists('plaza_get_all_headers') || !function_exists('plaza_validate_token')) {
-        return $result; // Si no existen las funciones, no interferir
-    }
-    
-    // Obtener token del header Authorization
-    $headers = plaza_get_all_headers();
-    $auth_header = isset($headers['Authorization']) ? $headers['Authorization'] : '';
-    
-    if (empty($auth_header)) {
-        return new WP_Error(
-            'plaza_unauthorized',
-            'Token de autorización requerido. Por favor, inicia sesión con Google.',
-            array('status' => 401)
-        );
-    }
-    
-    // Extraer token Bearer
-    if (preg_match('/Bearer\s+(.*)$/i', $auth_header, $matches)) {
-        $token = $matches[1];
-    } else {
-        return new WP_Error(
-            'plaza_invalid_token',
-            'Formato de token inválido. Use: Authorization: Bearer <token>',
-            array('status' => 401)
-        );
-    }
-    
-    // Validar token
-    $user_id = plaza_validate_token($token);
-    
-    if (!$user_id) {
-        return new WP_Error(
-            'plaza_invalid_token',
-            'Token inválido o expirado. Por favor, inicia sesión nuevamente.',
-            array('status' => 401)
-        );
-    }
-    
-    // Establecer usuario actual para WordPress
-    wp_set_current_user($user_id);
-    
-    // Verificar que tenga permisos adecuados
-    $user = get_userdata($user_id);
-    if (!$user || (!user_can($user_id, 'manage_woocommerce') && !user_can($user_id, 'administrator'))) {
-        return new WP_Error(
-            'plaza_insufficient_permissions',
-            'No tienes permisos suficientes. Se requiere rol de Administrator o Shop Manager.',
-            array('status' => 403)
-        );
-    }
-    
-    // Token válido, permitir acceso
-    return true;
-}
-
-/**
- * Verificar permisos del usuario usando token JWT (para endpoints personalizados)
- */
-function plaza_check_permissions() {
-    // Obtener token del header Authorization
-    $headers = plaza_get_all_headers();
-    $auth_header = isset($headers['Authorization']) ? $headers['Authorization'] : '';
-    
-    if (empty($auth_header)) {
-        return new WP_Error('unauthorized', 'Token de autorización requerido', array('status' => 401));
-    }
-    
-    // Extraer token Bearer
-    if (preg_match('/Bearer\s+(.*)$/i', $auth_header, $matches)) {
-        $token = $matches[1];
-    } else {
-        return new WP_Error('unauthorized', 'Formato de token inválido', array('status' => 401));
-    }
-    
-    // Validar token
-    $user_id = plaza_validate_token($token);
-    
-    if (!$user_id) {
-        return new WP_Error('unauthorized', 'Token inválido o expirado', array('status' => 401));
-    }
-    
-    // Establecer usuario actual para WordPress
-    wp_set_current_user($user_id);
-    
-    // Verificar que tenga permisos de subir archivos
-    if (!current_user_can('upload_files')) {
-        return new WP_Error('forbidden', 'No tienes permisos para subir archivos', array('status' => 403));
-    }
-    
-    return true;
-}
-
-/**
- * Subir imagen desde base64
- */
-function plaza_upload_image($request) {
-    $file_data = $request->get_param('file');
-    $filename = $request->get_param('filename') ?: 'image.jpg';
-    
-    // Validar que sea base64
-    if (!preg_match('/^data:image\/(\w+);base64,/', $file_data, $matches)) {
-        return new WP_Error('invalid_format', 'Formato de imagen inválido. Debe ser base64.', array('status' => 400));
-    }
-    
-    $image_type = $matches[1]; // jpeg, png, gif, etc.
-    $file_data = preg_replace('/^data:image\/\w+;base64,/', '', $file_data);
-    $file_data = base64_decode($file_data);
-    
-    if ($file_data === false) {
-        return new WP_Error('decode_error', 'Error al decodificar la imagen', array('status' => 400));
-    }
-    
-    // Validar tipo de imagen
-    $allowed_types = array('jpg', 'jpeg', 'png', 'gif', 'webp');
-    if (!in_array(strtolower($image_type), $allowed_types)) {
-        return new WP_Error('invalid_type', 'Tipo de imagen no permitido. Use: jpg, png, gif o webp', array('status' => 400));
-    }
-    
-    // Generar nombre único para el archivo
-    $upload_dir = wp_upload_dir();
-    $unique_filename = wp_unique_filename($upload_dir['path'], $filename);
-    $file_path = $upload_dir['path'] . '/' . $unique_filename;
-    
-    // Guardar archivo
-    file_put_contents($file_path, $file_data);
-    
-    // Validar que sea una imagen válida
-    $image_info = @getimagesize($file_path);
-    if ($image_info === false) {
-        @unlink($file_path);
-        return new WP_Error('invalid_image', 'El archivo no es una imagen válida', array('status' => 400));
-    }
-    
-    // Crear attachment en WordPress
-    $attachment = array(
-        'post_mime_type' => 'image/' . $image_type,
-        'post_title' => sanitize_file_name(pathinfo($unique_filename, PATHINFO_FILENAME)),
-        'post_content' => '',
-        'post_status' => 'inherit'
-    );
-    
-    $attach_id = wp_insert_attachment($attachment, $file_path);
-    
-    if (is_wp_error($attach_id)) {
-        @unlink($file_path);
-        return new WP_Error('upload_failed', 'Error al crear el attachment', array('status' => 500));
-    }
-    
-    // Generar metadatos de la imagen
-    require_once(ABSPATH . 'wp-admin/includes/image.php');
-    $attach_data = wp_generate_attachment_metadata($attach_id, $file_path);
-    wp_update_attachment_metadata($attach_id, $attach_data);
-    
-    // Obtener URL de la imagen
-    $image_url = wp_get_attachment_url($attach_id);
-    
-    return array(
-        'success' => true,
-        'url' => $image_url,
-        'id' => $attach_id,
-        'message' => 'Imagen subida exitosamente'
-    );
-}
-
-/**
- * Obtener Client ID de Google (público)
- */
-function plaza_get_google_client_id($request) {
-    // Agregar headers CORS siempre
-    plaza_add_cors_headers();
-    
-    $client_id = get_option('plaza_google_client_id', '');
-    
-    if (empty($client_id)) {
-        return new WP_Error(
-            'not_configured', 
-            'Google OAuth no está configurado. Ve a Configuración > Plaza para configurarlo.', 
-            array('status' => 404)
-        );
-    }
-    
-    return array(
-        'client_id' => $client_id,
-        'configured' => true
-    );
 }
 
 /**
  * Autenticación con Google OAuth
  */
 function plaza_google_auth($request) {
-    // Agregar headers CORS siempre
-    plaza_add_cors_headers();
-    
     $code = $request->get_param('code');
     $redirect_uri = $request->get_param('redirect_uri');
     
     if (empty($code) || empty($redirect_uri)) {
-        return new WP_Error('missing_params', 'Código y redirect_uri son requeridos', array('status' => 400));
+        return new WP_Error('missing_params', 'Código y redirect_uri requeridos', array('status' => 400));
     }
     
-    // Obtener credenciales de Google
     $client_id = get_option('plaza_google_client_id', '');
     $client_secret = get_option('plaza_google_client_secret', '');
     
     if (empty($client_id) || empty($client_secret)) {
-        return new WP_Error('not_configured', 'Google OAuth no está configurado. Contacta al administrador.', array('status' => 500));
+        return new WP_Error('not_configured', 'Google OAuth no configurado', array('status' => 500));
     }
     
-    // Paso 1: Intercambiar código por token
-    $token_data = plaza_exchange_code_for_token($code, $client_id, $client_secret, $redirect_uri);
-    
-    if (is_wp_error($token_data)) {
-        return $token_data;
-    }
-    
-    $access_token = $token_data['access_token'];
-    
-    // Paso 2: Obtener información del usuario desde Google
-    $user_info = plaza_get_google_user_info($access_token);
-    
-    if (is_wp_error($user_info)) {
-        return $user_info;
-    }
-    
-    $email = $user_info['email'];
-    
-    // Paso 3: Buscar usuario en WordPress por email
-    $user = get_user_by('email', $email);
-    
-    if (!$user) {
-        return new WP_Error('user_not_found', 'Este email no está registrado en WordPress. Contacta al administrador.', array('status' => 404));
-    }
-    
-    // Paso 4: Generar Token JWT
-    $token = plaza_generate_jwt_token($user->ID);
-    
-    if (is_wp_error($token)) {
-        return $token;
-    }
-    
-    // Paso 5: Obtener URL base del sitio
-    $base_url = home_url();
-    
-    // Devolver credenciales con token JWT
-    return array(
-        'success' => true,
-        'token' => $token,
-        'baseUrl' => $base_url,
-        'email' => $email,
-        'userId' => $user->ID,
-        'username' => $user->user_login,
-        'message' => 'Autenticación exitosa'
-    );
-}
-
-/**
- * Intercambiar código de autorización por access token
- */
-function plaza_exchange_code_for_token($code, $client_id, $client_secret, $redirect_uri) {
-    $token_url = 'https://oauth2.googleapis.com/token';
-    
-    $body = array(
-        'code' => $code,
-        'client_id' => $client_id,
-        'client_secret' => $client_secret,
-        'redirect_uri' => $redirect_uri,
-        'grant_type' => 'authorization_code'
-    );
-    
-    $response = wp_remote_post($token_url, array(
-        'body' => $body,
-        'timeout' => 30
-    ));
-    
-    if (is_wp_error($response)) {
-        return new WP_Error('token_exchange_failed', 'Error al intercambiar código por token: ' . $response->get_error_message(), array('status' => 500));
-    }
-    
-    $response_code = wp_remote_retrieve_response_code($response);
-    $response_body = wp_remote_retrieve_body($response);
-    $data = json_decode($response_body, true);
-    
-    if ($response_code !== 200) {
-        $error_message = isset($data['error_description']) ? $data['error_description'] : 'Error desconocido';
-        return new WP_Error('token_exchange_failed', 'Error de Google: ' . $error_message, array('status' => $response_code));
-    }
-    
-    if (!isset($data['access_token'])) {
-        return new WP_Error('token_exchange_failed', 'No se recibió access_token de Google', array('status' => 500));
-    }
-    
-    return $data;
-}
-
-/**
- * Obtener información del usuario desde Google
- */
-function plaza_get_google_user_info($access_token) {
-    $user_info_url = 'https://www.googleapis.com/oauth2/v2/userinfo';
-    
-    $response = wp_remote_get($user_info_url, array(
-        'headers' => array(
-            'Authorization' => 'Bearer ' . $access_token
+    // Intercambiar código por token
+    $response = wp_remote_post('https://oauth2.googleapis.com/token', array(
+        'body' => array(
+            'code' => $code,
+            'client_id' => $client_id,
+            'client_secret' => $client_secret,
+            'redirect_uri' => $redirect_uri,
+            'grant_type' => 'authorization_code'
         ),
         'timeout' => 30
     ));
     
     if (is_wp_error($response)) {
-        return new WP_Error('user_info_failed', 'Error al obtener información del usuario: ' . $response->get_error_message(), array('status' => 500));
+        return new WP_Error('token_failed', $response->get_error_message(), array('status' => 500));
     }
     
-    $response_code = wp_remote_retrieve_response_code($response);
-    $response_body = wp_remote_retrieve_body($response);
-    $data = json_decode($response_body, true);
+    $data = json_decode(wp_remote_retrieve_body($response), true);
     
-    if ($response_code !== 200) {
-        $error_message = isset($data['error']['message']) ? $data['error']['message'] : 'Error desconocido';
-        return new WP_Error('user_info_failed', 'Error de Google: ' . $error_message, array('status' => $response_code));
+    if (wp_remote_retrieve_response_code($response) !== 200 || !isset($data['access_token'])) {
+        return new WP_Error('token_failed', 'Error obteniendo token de Google', array('status' => 500));
     }
     
-    if (!isset($data['email'])) {
-        return new WP_Error('user_info_failed', 'No se pudo obtener el email del usuario', array('status' => 500));
+    // Obtener información del usuario
+    $user_response = wp_remote_get('https://www.googleapis.com/oauth2/v2/userinfo', array(
+        'headers' => array('Authorization' => 'Bearer ' . $data['access_token']),
+        'timeout' => 30
+    ));
+    
+    if (is_wp_error($user_response)) {
+        return new WP_Error('user_failed', $user_response->get_error_message(), array('status' => 500));
     }
     
-    return $data;
-}
-
-/**
- * Generar Token Simple para un usuario
- */
-function plaza_generate_jwt_token($user_id) {
-    $user = get_user_by('ID', $user_id);
+    $user_data = json_decode(wp_remote_retrieve_body($user_response), true);
     
+    if (!isset($user_data['email'])) {
+        return new WP_Error('user_failed', 'No se pudo obtener email', array('status' => 500));
+    }
+    
+    // Buscar usuario en WordPress
+    $user = get_user_by('email', $user_data['email']);
     if (!$user) {
-        return new WP_Error('user_not_found', 'Usuario no encontrado', array('status' => 404));
+        return new WP_Error('user_not_found', 'Usuario no registrado', array('status' => 404));
     }
     
-    // Generar token aleatorio simple y único (32 caracteres)
+    // Generar token simple
     $token = wp_generate_password(32, false, false);
+    $expires = time() + (30 * 24 * 60 * 60);
     
-    // Calcular expiración (30 días)
-    $expires_at = time() + (30 * 24 * 60 * 60);
+    update_user_meta($user->ID, 'plaza_token', $token);
+    update_user_meta($user->ID, 'plaza_token_expires', $expires);
     
-    // Guardar token en user meta con expiración
-    update_user_meta($user_id, 'plaza_token', $token);
-    update_user_meta($user_id, 'plaza_token_expires', $expires_at);
-    
-    return $token;
+    return array(
+        'success' => true,
+        'token' => $token,
+        'baseUrl' => home_url(),
+        'email' => $user_data['email'],
+        'userId' => $user->ID,
+        'username' => $user->user_login
+    );
 }
 
 /**
- * Validar Token Simple
+ * Verificar permisos
  */
-function plaza_validate_token($token) {
-    if (empty($token)) {
-        return false;
+function plaza_check_permissions() {
+    $headers = array();
+    foreach ($_SERVER as $key => $value) {
+        if (substr($key, 0, 5) === 'HTTP_') {
+            $header = str_replace(' ', '-', ucwords(strtolower(str_replace('_', ' ', substr($key, 5)))));
+            $headers[$header] = $value;
+        }
     }
     
-    // Buscar usuario que tenga este token
+    $auth_header = isset($headers['Authorization']) ? $headers['Authorization'] : 
+                   (isset($_SERVER['HTTP_AUTHORIZATION']) ? $_SERVER['HTTP_AUTHORIZATION'] : '');
+    
+    if (empty($auth_header) || !preg_match('/Bearer\s+(.*)$/i', $auth_header, $matches)) {
+        return new WP_Error('unauthorized', 'Token requerido', array('status' => 401));
+    }
+    
+    $token = $matches[1];
     $users = get_users(array(
         'meta_key' => 'plaza_token',
         'meta_value' => $token,
@@ -615,27 +240,74 @@ function plaza_validate_token($token) {
     ));
     
     if (empty($users)) {
-        return false;
+        return new WP_Error('unauthorized', 'Token inválido', array('status' => 401));
     }
     
     $user = $users[0];
-    $user_id = $user->ID;
+    $expires = get_user_meta($user->ID, 'plaza_token_expires', true);
     
-    // Verificar expiración
-    $expires_at = get_user_meta($user_id, 'plaza_token_expires', true);
-    if (empty($expires_at) || time() > $expires_at) {
-        // Token expirado, limpiar
-        delete_user_meta($user_id, 'plaza_token');
-        delete_user_meta($user_id, 'plaza_token_expires');
-        return false;
+    if (empty($expires) || time() > $expires) {
+        delete_user_meta($user->ID, 'plaza_token');
+        delete_user_meta($user->ID, 'plaza_token_expires');
+        return new WP_Error('unauthorized', 'Token expirado', array('status' => 401));
     }
     
-    // Verificar que el usuario existe y está activo
-    $user_data = get_user_by('ID', $user_id);
-    if (!$user_data) {
-        return false;
+    wp_set_current_user($user->ID);
+    
+    if (!current_user_can('upload_files')) {
+        return new WP_Error('forbidden', 'Sin permisos', array('status' => 403));
     }
     
-    return $user_id;
+    return true;
 }
 
+/**
+ * Subir imagen
+ */
+function plaza_upload_image($request) {
+    $file_data = $request->get_param('file');
+    $filename = $request->get_param('filename') ?: 'image.jpg';
+    
+    if (!preg_match('/^data:image\/(\w+);base64,/', $file_data, $matches)) {
+        return new WP_Error('invalid_format', 'Formato inválido', array('status' => 400));
+    }
+    
+    $image_type = $matches[1];
+    $file_data = base64_decode(preg_replace('/^data:image\/\w+;base64,/', '', $file_data));
+    
+    if ($file_data === false) {
+        return new WP_Error('decode_error', 'Error decodificando', array('status' => 400));
+    }
+    
+    $upload_dir = wp_upload_dir();
+    $unique_filename = wp_unique_filename($upload_dir['path'], $filename);
+    $file_path = $upload_dir['path'] . '/' . $unique_filename;
+    
+    file_put_contents($file_path, $file_data);
+    
+    if (@getimagesize($file_path) === false) {
+        @unlink($file_path);
+        return new WP_Error('invalid_image', 'No es imagen válida', array('status' => 400));
+    }
+    
+    $attach_id = wp_insert_attachment(array(
+        'post_mime_type' => 'image/' . $image_type,
+        'post_title' => sanitize_file_name(pathinfo($unique_filename, PATHINFO_FILENAME)),
+        'post_content' => '',
+        'post_status' => 'inherit'
+    ), $file_path);
+    
+    if (is_wp_error($attach_id)) {
+        @unlink($file_path);
+        return new WP_Error('upload_failed', 'Error subiendo', array('status' => 500));
+    }
+    
+    require_once(ABSPATH . 'wp-admin/includes/image.php');
+    wp_update_attachment_metadata($attach_id, wp_generate_attachment_metadata($attach_id, $file_path));
+    
+    return array(
+        'success' => true,
+        'url' => wp_get_attachment_url($attach_id),
+        'id' => $attach_id
+    );
+}
