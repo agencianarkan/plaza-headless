@@ -25,13 +25,16 @@ class WooCommerceAPI {
         }
     }
 
-    // Hacer petición a la API
+    // Hacer petición a la API (usando proxy para evitar CORS)
     async request(endpoint, options = {}) {
         if (!this.baseUrl) {
             this.baseUrl = auth.getBaseUrl();
         }
 
-        const url = `${this.baseUrl}/wp-json/wc/v3${endpoint}`;
+        // Usar proxy en lugar de petición directa (elimina CORS)
+        // El proxy está en /wp-json/plaza/v1/proxy/wc/v3/...
+        const proxyPath = endpoint.startsWith('/') ? endpoint.substring(1) : endpoint;
+        const url = `${this.baseUrl}/wp-json/plaza/v1/proxy/${proxyPath}`;
         const headers = this.getHeaders();
 
         try {

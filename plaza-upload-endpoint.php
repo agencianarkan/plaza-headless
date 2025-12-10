@@ -210,6 +210,19 @@ add_action('rest_api_init', function() {
         'callback' => 'plaza_upload_image',
         'permission_callback' => 'plaza_check_permissions',
     ));
+    
+    // PROXY: Redirigir peticiones a WooCommerce API (elimina CORS)
+    register_rest_route('plaza/v1', '/proxy/(?P<path>.*)', array(
+        'methods' => 'GET, POST, PUT, DELETE',
+        'callback' => 'plaza_api_proxy',
+        'permission_callback' => 'plaza_check_permissions',
+        'args' => array(
+            'path' => array(
+                'required' => true,
+                'type' => 'string',
+            ),
+        ),
+    ));
 });
 
 /**
@@ -943,4 +956,74 @@ function plaza_upload_image($request) {
         'url' => wp_get_attachment_url($attach_id),
         'id' => $attach_id
     );
+}
+
+/**
+ * PROXY: Redirigir peticiones a WooCommerce API (elimina CORS completamente)
+ * Todas las peticiones van a /wp-json/plaza/v1/proxy/wc/v3/... 
+ * y el proxy las redirige a /wp-json/wc/v3/...
+ */
+function plaza_api_proxy($request) {
+    plaza_add_cors_headers();
+    
+    $path = $request->get_param('path');
+    $method = $_SERVER['REQUEST_METHOD'];
+    
+    // Construir URL completa de WooCommerce API
+    $wc_url = home_url('/wp-json/wc/v3/' . $path);
+    
+    // Agregar query parameters si existen
+    $query_string = $_SERVER['QUERY_STRING'] ?? '';
+    if (!empty($query_string)) {
+        $wc_url .= '?' . $query_string;
+    }
+    
+    // Preparar headers para la petición
+    $headers = array(
+        'Content-Type' => 'application/json',
+    );
+    
+    // Obtener body si existe
+    $body = null;
+    if (in_array($method, array('POST', 'PUT', 'PATCH'))) {
+        $body = file_get_contents('php://input');
+    }
+    
+    // Hacer petición a WooCommerce API
+    $args = array(
+        'method' => $method,
+        'headers' => $headers,
+        'timeout' => 30,
+        'sslverify' => true,
+    );
+    
+    if ($body) {
+        $args['body'] = $body;
+    }
+    
+    $response = wp_remote_request($wc_url, $args);
+    
+    if (is_wp_error($response)) {
+        return new WP_REST_Response(
+            array('error' => $response->get_error_message()),
+            500
+        );
+    }
+    
+    $status_code = wp_remote_retrieve_response_code($response);
+    $response_body = wp_remote_retrieve_body($response);
+    $response_headers = wp_remote_retrieve_headers($response);
+    
+    // Crear respuesta REST
+    $rest_response = new WP_REST_Response(
+        json_decode($response_body, true),
+        $status_code
+    );
+    
+    // Copiar headers importantes
+    if (isset($response_headers['content-type'])) {
+        $rest_response->header('Content-Type', $response_headers['content-type']);
+    }
+    
+    return $rest_response;
 }
