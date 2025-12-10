@@ -62,13 +62,16 @@ async function checkAndShowShippingMenu() {
     // Si no tenemos el rol, intentar obtenerlo
     try {
         const baseUrl = auth.getBaseUrl();
-        const headers = auth.getAuthHeaders();
+        const credentials = btoa(`${auth.username}:${auth.password}`);
         
         // Intentar obtener con contexto edit para incluir roles
         const wpUrl = `${baseUrl}/wp-json/wp/v2/users/me?context=edit`;
         const wpResponse = await fetch(wpUrl, {
             method: 'GET',
-            headers: headers
+            headers: {
+                'Authorization': `Basic ${credentials}`,
+                'Content-Type': 'application/json'
+            }
         });
         
         if (wpResponse.ok) {
@@ -83,7 +86,10 @@ async function checkAndShowShippingMenu() {
                     const userByIdUrl = `${baseUrl}/wp-json/wp/v2/users/${userData.id}?context=edit`;
                     const userByIdResponse = await fetch(userByIdUrl, {
                         method: 'GET',
-                        headers: headers
+                        headers: {
+                            'Authorization': `Basic ${credentials}`,
+                            'Content-Type': 'application/json'
+                        }
                     });
                     
                     if (userByIdResponse.ok) {
@@ -132,258 +138,101 @@ async function checkAndShowShippingMenu() {
 
 // Event Listeners
 function setupEventListeners() {
-    // Mostrar campo de Application Password si no está guardado
-    checkAppPasswordField();
+    // Login
+    document.getElementById('login-form').addEventListener('submit', handleLogin);
     
-    const loginForm = document.getElementById('login-form');
-    if (loginForm) {
-        loginForm.addEventListener('submit', handleLogin);
-    }
+    // Logout
+    document.getElementById('logout-btn').addEventListener('click', handleLogout);
     
-    // Actualizar campo de Application Password cuando cambie la URL o usuario
-    const urlInput = document.getElementById('woocommerce-url');
-    const usernameInput = document.getElementById('username');
-    if (urlInput) urlInput.addEventListener('input', checkAppPasswordField);
-    if (usernameInput) usernameInput.addEventListener('input', checkAppPasswordField);
-    
-    // Logout (solo si existe)
-    const logoutBtn = document.getElementById('logout-btn');
-    if (logoutBtn) {
-        logoutBtn.addEventListener('click', handleLogout);
-    }
-    
-    // Navegación (solo si existe)
-    const navLinks = document.querySelectorAll('.nav-link');
-    if (navLinks.length > 0) {
-        navLinks.forEach(link => {
-            link.addEventListener('click', (e) => {
-                e.preventDefault();
-                const page = e.target.getAttribute('data-page');
-                navigateToPage(page);
-            });
+    // Navegación
+    document.querySelectorAll('.nav-link').forEach(link => {
+        link.addEventListener('click', (e) => {
+            e.preventDefault();
+            const page = e.target.getAttribute('data-page');
+            navigateToPage(page);
         });
-    }
+    });
 
-    // Clientes (solo si existe)
-    const customerSearch = document.getElementById('customer-search');
-    if (customerSearch) {
-        customerSearch.addEventListener('input', debounce(loadCustomers, 500));
-    }
+    // Clientes
+    document.getElementById('customer-search').addEventListener('input', debounce(loadCustomers, 500));
     
-    // Reportes (solo si existe)
-    const updateReportBtn = document.getElementById('update-report-btn');
-    if (updateReportBtn) {
-        updateReportBtn.addEventListener('click', loadReports);
-    }
-    const resetReportBtn = document.getElementById('reset-report-btn');
-    if (resetReportBtn) {
-        resetReportBtn.addEventListener('click', resetReportDates);
-    }
+    // Reportes
+    document.getElementById('update-report-btn').addEventListener('click', loadReports);
+    document.getElementById('reset-report-btn').addEventListener('click', resetReportDates);
     
     // Configuración - los event listeners se agregarán dinámicamente
 
-    // Productos (solo si existe)
-    const newProductBtn = document.getElementById('new-product-btn');
-    if (newProductBtn) {
-        newProductBtn.addEventListener('click', async () => await openProductModal());
-    }
-    
-    const productForm = document.getElementById('product-form');
-    if (productForm) {
-        productForm.addEventListener('submit', handleProductSubmit);
-    }
-    
-    const productFormCancel = document.getElementById('product-form-cancel');
-    if (productFormCancel) {
-        productFormCancel.addEventListener('click', closeProductModal);
-    }
-    
-    const productModalClose = document.getElementById('product-modal-close');
-    if (productModalClose) {
-        productModalClose.addEventListener('click', closeProductModal);
-    }
-    
-    const productSearch = document.getElementById('product-search');
-    if (productSearch) {
-        productSearch.addEventListener('input', debounce(loadProducts, 500));
-    }
-    
-    const productStatusFilter = document.getElementById('product-status-filter');
-    if (productStatusFilter) {
-        productStatusFilter.addEventListener('change', loadProducts);
-    }
-    
-    const addImageBtn = document.getElementById('add-image-btn');
-    if (addImageBtn) {
-        addImageBtn.addEventListener('click', addImageFromUrl);
-    }
-    
-    const productImageUrl = document.getElementById('product-image-url');
-    if (productImageUrl) {
-        productImageUrl.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                e.preventDefault();
-                addImageFromUrl();
-            }
-        });
-    }
-    
-    const productImageFile = document.getElementById('product-image-file');
-    if (productImageFile) {
-        productImageFile.addEventListener('change', handleFileUpload);
-    }
-    
-    const deleteProductBtn = document.getElementById('delete-product-btn');
-    if (deleteProductBtn) {
-        deleteProductBtn.addEventListener('click', handleDeleteProductFromModal);
-    }
-    
-    // Editor de texto enriquecido (solo si existe)
-    try {
-        setupRichEditors();
-    } catch (e) {
-        // Si no existe, no pasa nada
-        console.log('Rich editors no disponibles');
-    }
-
-    // Pedidos (solo si existe)
-    const orderSearch = document.getElementById('order-search');
-    if (orderSearch) {
-        orderSearch.addEventListener('input', debounce(loadOrders, 500));
-    }
-    
-    const orderStatusFilter = document.getElementById('order-status-filter');
-    if (orderStatusFilter) {
-        orderStatusFilter.addEventListener('change', loadOrders);
-    }
-    
-    const orderStatusForm = document.getElementById('order-status-form');
-    if (orderStatusForm) {
-        orderStatusForm.addEventListener('submit', handleOrderStatusSubmit);
-    }
-    
-    const orderStatusFormCancel = document.getElementById('order-status-form-cancel');
-    if (orderStatusFormCancel) {
-        orderStatusFormCancel.addEventListener('click', closeOrderStatusModal);
-    }
-    
-    const orderStatusModalClose = document.getElementById('order-status-modal-close');
-    if (orderStatusModalClose) {
-        orderStatusModalClose.addEventListener('click', closeOrderStatusModal);
-    }
-
-    // Cerrar modales al hacer click fuera (solo si existen)
-    const productModal = document.getElementById('product-modal');
-    if (productModal) {
-        productModal.addEventListener('click', (e) => {
-            if (e.target.id === 'product-modal') closeProductModal();
-        });
-    }
-    
-    const orderStatusModal = document.getElementById('order-status-modal');
-    if (orderStatusModal) {
-        orderStatusModal.addEventListener('click', (e) => {
-            if (e.target.id === 'order-status-modal') closeOrderStatusModal();
-        });
-    }
-}
-
-// ========== VERIFICAR CAMPO APPLICATION PASSWORD ==========
-
-function checkAppPasswordField() {
-    const urlInput = document.getElementById('woocommerce-url');
-    const usernameInput = document.getElementById('username');
-    const appPasswordGroup = document.getElementById('app-password-group');
-    const appPasswordInput = document.getElementById('app-password');
-    
-    if (!urlInput || !usernameInput || !appPasswordGroup) return;
-    
-    const baseUrl = urlInput.value.trim().replace(/\/$/, '');
-    const username = usernameInput.value.trim();
-    
-    // Verificar si ya hay Application Password guardado para esta URL+usuario
-    if (baseUrl && username) {
-        const savedAppPassword = auth.getSavedAppPassword(baseUrl, username);
-        if (savedAppPassword) {
-            // Ya existe, ocultar campo
-            appPasswordGroup.style.display = 'none';
-            if (appPasswordInput) appPasswordInput.required = false;
-        } else {
-            // No existe, mostrar campo (primera vez)
-            appPasswordGroup.style.display = 'block';
-            if (appPasswordInput) appPasswordInput.required = true;
+    // Productos
+    document.getElementById('new-product-btn').addEventListener('click', async () => await openProductModal());
+    document.getElementById('product-form').addEventListener('submit', handleProductSubmit);
+    document.getElementById('product-form-cancel').addEventListener('click', closeProductModal);
+    document.getElementById('product-modal-close').addEventListener('click', closeProductModal);
+    document.getElementById('product-search').addEventListener('input', debounce(loadProducts, 500));
+    document.getElementById('product-status-filter').addEventListener('change', loadProducts);
+    document.getElementById('add-image-btn').addEventListener('click', addImageFromUrl);
+    document.getElementById('product-image-url').addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            addImageFromUrl();
         }
-    } else {
-        // Campos vacíos, ocultar
-        appPasswordGroup.style.display = 'none';
-    }
+    });
+    document.getElementById('product-image-file').addEventListener('change', handleFileUpload);
+    document.getElementById('delete-product-btn').addEventListener('click', handleDeleteProductFromModal);
+    
+    // Editor de texto enriquecido
+    setupRichEditors();
+
+    // Pedidos
+    document.getElementById('order-search').addEventListener('input', debounce(loadOrders, 500));
+    document.getElementById('order-status-filter').addEventListener('change', loadOrders);
+    document.getElementById('order-status-form').addEventListener('submit', handleOrderStatusSubmit);
+    document.getElementById('order-status-form-cancel').addEventListener('click', closeOrderStatusModal);
+    document.getElementById('order-status-modal-close').addEventListener('click', closeOrderStatusModal);
+
+    // Cerrar modales al hacer click fuera
+    document.getElementById('product-modal').addEventListener('click', (e) => {
+        if (e.target.id === 'product-modal') closeProductModal();
+    });
+    document.getElementById('order-status-modal').addEventListener('click', (e) => {
+        if (e.target.id === 'order-status-modal') closeOrderStatusModal();
+    });
 }
 
-// ========== LOGIN CON USUARIO Y CONTRASEÑA ==========
+// ========== AUTENTICACIÓN ==========
 
 async function handleLogin(e) {
     e.preventDefault();
-    
     const errorDiv = document.getElementById('login-error');
     errorDiv.textContent = '';
     errorDiv.classList.remove('show');
-    
-    const baseUrl = document.getElementById('woocommerce-url').value.trim().replace(/\/$/, '');
-    const username = document.getElementById('username').value.trim();
+
+    const username = document.getElementById('username').value;
     const password = document.getElementById('password').value;
-    const appPasswordInput = document.getElementById('app-password');
-    const appPassword = appPasswordInput ? appPasswordInput.value.trim() : '';
-    
-    if (!baseUrl || !username || !password) {
-        errorDiv.textContent = 'Por favor completa todos los campos requeridos';
-        errorDiv.classList.add('show');
-        showToast('Campos requeridos', 'error');
-        return;
-    }
-    
+    const baseUrl = document.getElementById('woocommerce-url').value;
+
     try {
-        showToast('Iniciando sesión...', 'success');
-        
-        // Verificar si hay Application Password guardado
-        let finalAppPassword = auth.getSavedAppPassword(baseUrl, username);
-        
-        // Si no hay guardado, usar el que ingresó el usuario
-        if (!finalAppPassword && appPassword) {
-            finalAppPassword = appPassword;
-            // Guardar para la próxima vez
-            auth.saveAppPassword(baseUrl, username, finalAppPassword);
-        }
-        
-        // Si aún no hay Application Password/contraseña, mostrar error
-        if (!finalAppPassword) {
-            errorDiv.textContent = 'Application Password o contraseña requerido. Si Application Passwords da error, usa tu contraseña normal de WordPress.';
-            errorDiv.classList.add('show');
-            showToast('Credenciales requeridas', 'error');
-            document.getElementById('app-password-group').style.display = 'block';
-            return;
-        }
-        
-        await auth.loginWithCredentials(baseUrl, username, finalAppPassword);
-        
+        showToast('Autenticando...', 'success');
+        await auth.authenticate(baseUrl, username, password);
         wcAPI.init(auth.getBaseUrl());
+        
+        const userInfo = document.getElementById('user-info');
+        userInfo.textContent = `Usuario: ${username}`;
+        
         showDashboard();
         loadDashboard();
-        checkAndShowShippingMenu();
         
-        // Limpiar formulario
-        document.getElementById('password').value = '';
-        const appPasswordInput = document.getElementById('app-password');
-        if (appPasswordInput) appPasswordInput.value = '';
+        // Verificar y mostrar menú de envíos después de un breve delay
+        setTimeout(() => {
+            checkAndShowShippingMenu();
+        }, 500);
         
         showToast('¡Bienvenido!', 'success');
     } catch (error) {
         errorDiv.textContent = error.message;
         errorDiv.classList.add('show');
-        showToast('Error: ' + error.message, 'error');
+        showToast('Error de autenticación', 'error');
     }
 }
-
-
 
 function handleLogout() {
     auth.logout();

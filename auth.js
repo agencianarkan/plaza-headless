@@ -1,14 +1,13 @@
-// auth.js - Manejo de autenticación con WordPress usando Basic Auth + Application Passwords
+// auth.js - Manejo de autenticación con WordPress
 
 class Auth {
     constructor() {
         this.baseUrl = null;
         this.username = null;
-        this.appPassword = null;
+        this.password = null;
         this.isAuthenticated = false;
         this.userRole = null;
         this.isAdmin = false;
-        this.userId = null;
     }
 
     // Inicializar desde localStorage
@@ -17,93 +16,57 @@ class Auth {
             const saved = localStorage.getItem('plaza_auth');
             if (saved) {
                 const data = JSON.parse(saved);
-                if (data.baseUrl && data.username && data.appPassword) {
+                if (data.baseUrl && data.username && data.password) {
                     this.baseUrl = data.baseUrl;
                     this.username = data.username;
-                    this.appPassword = data.appPassword;
+                    this.password = data.password;
                     this.isAuthenticated = true;
                     this.userRole = data.userRole || null;
                     this.isAdmin = data.isAdmin || false;
-                    this.userId = data.userId || null;
+                    console.log('Credenciales cargadas desde localStorage');
                 } else {
+                    console.warn('Credenciales incompletas en localStorage, limpiando...');
                     localStorage.removeItem('plaza_auth');
                     this.isAuthenticated = false;
                 }
+            } else {
+                console.log('No hay credenciales guardadas en localStorage');
+                this.isAuthenticated = false;
             }
         } catch (error) {
-            console.error('Error cargando credenciales:', error);
+            console.error('Error cargando credenciales desde localStorage:', error);
             localStorage.removeItem('plaza_auth');
             this.isAuthenticated = false;
         }
     }
 
-    // Guardar Application Password por URL+usuario (para no pedirlo más)
-    saveAppPassword(baseUrl, username, appPassword) {
-        try {
-            const key = `plaza_app_passwords`;
-            let saved = localStorage.getItem(key);
-            let passwords = saved ? JSON.parse(saved) : {};
-            
-            const urlKey = baseUrl.replace(/\/$/, '') + '|' + username;
-            passwords[urlKey] = appPassword;
-            
-            localStorage.setItem(key, JSON.stringify(passwords));
-        } catch (error) {
-            console.error('Error guardando Application Password:', error);
-        }
-    }
-
-    // Obtener Application Password guardado
-    getSavedAppPassword(baseUrl, username) {
-        try {
-            const key = `plaza_app_passwords`;
-            const saved = localStorage.getItem(key);
-            if (!saved) return null;
-            
-            const passwords = JSON.parse(saved);
-            const urlKey = baseUrl.replace(/\/$/, '') + '|' + username;
-            
-            return passwords[urlKey] || null;
-        } catch (error) {
-            console.error('Error obteniendo Application Password:', error);
-            return null;
-        }
-    }
-
-    // Guardar credenciales
-    saveCredentials(baseUrl, username, appPassword, userId = null, userRole = null, isAdmin = false) {
-        this.baseUrl = baseUrl.replace(/\/$/, '');
+    // Guardar credenciales en localStorage
+    saveCredentials(baseUrl, username, password, userRole = null, isAdmin = false) {
+        this.baseUrl = baseUrl.replace(/\/$/, ''); // Remover trailing slash
         this.username = username;
-        this.appPassword = appPassword;
-        this.userId = userId;
+        this.password = password;
         this.userRole = userRole;
         this.isAdmin = isAdmin;
-        
-        // Guardar también en el objeto de Application Passwords
-        this.saveAppPassword(baseUrl, username, appPassword);
-        
         localStorage.setItem('plaza_auth', JSON.stringify({
             baseUrl: this.baseUrl,
             username: this.username,
-            appPassword: this.appPassword,
-            userId: this.userId,
+            password: this.password,
             userRole: this.userRole,
             isAdmin: this.isAdmin
         }));
     }
 
-    // Login con usuario y Application Password o contraseña normal (MÉTODO PRINCIPAL)
-    async loginWithCredentials(baseUrl, username, appPasswordOrPassword) {
+    // Autenticar con WordPress
+    async authenticate(baseUrl, username, password) {
         try {
             const cleanUrl = baseUrl.replace(/\/$/, '');
             
-            // Crear Basic Auth header: usuario:password en base64
-            // Si es Application Password, se usa directamente
-            // Si es contraseña normal, también funciona con Basic Auth
-            const credentials = btoa(`${username}:${appPasswordOrPassword}`);
+            // Usar Basic Auth para autenticación
+            const credentials = btoa(`${username}:${password}`);
             
-            // Probar la autenticación haciendo una petición a la API de WordPress
-            const response = await fetch(`${cleanUrl}/wp-json/wp/v2/users/me?context=edit`, {
+            // Intentar primero con WooCommerce API (más confiable para validar)
+            const wcUrl = `${cleanUrl}/wp-json/wc/v3/system_status`;
+            const wcResponse = await fetch(wcUrl, {
                 method: 'GET',
                 headers: {
                     'Authorization': `Basic ${credentials}`,
@@ -111,47 +74,145 @@ class Auth {
                 }
             });
 
-            if (!response.ok) {
-                if (response.status === 401) {
-                    throw new Error('Usuario o contraseña incorrectos. Verifica tus credenciales.');
+            if (wcResponse.ok) {
+                // Autenticación exitosa con WooCommerce
+                // Intentar obtener el rol del usuario desde WordPress
+                try {
+                    const wpUrl = `${cleanUrl}/wp-json/wp/v2/users/me`;
+                    const wpResponse = await fetch(wpUrl, {
+                        method: 'GET',
+                        headers: {
+                            'Authorization': `Basic ${credentials}`,
+                            'Content-Type': 'application/json'
+                        }
+                    });
+                    
+                    if (wpResponse.ok) {
+                        const userData = await wpResponse.json();
+                        let roles = userData.roles;
+                        
+                        // Si no hay roles, intentar obtener con contexto edit
+                        if (!roles) {
+                            try {
+                                const editUrl = `${cleanUrl}/wp-json/wp/v2/users/me?context=edit`;
+                                const editResponse = await fetch(editUrl, {
+                                    method: 'GET',
+                                    headers: {
+                                        'Authorization': `Basic ${credentials}`,
+                                        'Content-Type': 'application/json'
+                                    }
+                                });
+                                if (editResponse.ok) {
+                                    const editData = await editResponse.json();
+                                    roles = editData.roles;
+                                }
+                            } catch (e) {
+                                // Si falla, usar heurística: admin con ID 1 o nombre 'admin'
+                                if (userData.id === 1 || userData.name === 'admin' || userData.slug === 'admin') {
+                                    roles = ['administrator'];
+                                }
+                            }
+                        }
+                        
+                        const userRole = roles && roles.length > 0 ? roles[0] : null;
+                        const isAdmin = roles && roles.includes('administrator') 
+                            || (userData.id === 1 && userData.name === 'admin')
+                            || (userData.slug === 'admin');
+                        this.saveCredentials(baseUrl, username, password, userRole, isAdmin);
+                    } else {
+                        this.saveCredentials(baseUrl, username, password);
+                    }
+                } catch (e) {
+                    this.saveCredentials(baseUrl, username, password);
                 }
-                const errorData = await response.json().catch(() => ({}));
-                throw new Error(errorData.message || `Error ${response.status}`);
+                
+                this.isAuthenticated = true;
+                return true;
             }
 
-            const userData = await response.json();
+            // Si falla WooCommerce, intentar con WordPress REST API
+            const wpUrl = `${cleanUrl}/wp-json/wp/v2/users/me`;
+            const wpResponse = await fetch(wpUrl, {
+                method: 'GET',
+                headers: {
+                    'Authorization': `Basic ${credentials}`,
+                    'Content-Type': 'application/json'
+                }
+            });
 
-            // Verificar permisos
-            if (!userData.capabilities || (!userData.capabilities.administrator && !userData.capabilities.manage_woocommerce)) {
-                throw new Error('Se requiere rol de Administrator o Shop Manager');
+            if (wpResponse.ok) {
+                // Autenticación exitosa con WordPress
+                const userData = await wpResponse.json();
+                let roles = userData.roles;
+                
+                // Si no hay roles, intentar obtener con contexto edit
+                if (!roles) {
+                    try {
+                        const editUrl = `${cleanUrl}/wp-json/wp/v2/users/me?context=edit`;
+                        const editResponse = await fetch(editUrl, {
+                            method: 'GET',
+                            headers: {
+                                'Authorization': `Basic ${credentials}`,
+                                'Content-Type': 'application/json'
+                            }
+                        });
+                        if (editResponse.ok) {
+                            const editData = await editResponse.json();
+                            roles = editData.roles;
+                        }
+                    } catch (e) {
+                        // Si falla, usar heurística: admin con ID 1 o nombre 'admin'
+                        if (userData.id === 1 || userData.name === 'admin' || userData.slug === 'admin') {
+                            roles = ['administrator'];
+                        }
+                    }
+                }
+                
+                const userRole = roles && roles.length > 0 ? roles[0] : null;
+                const isAdmin = roles && roles.includes('administrator') 
+                    || (userData.id === 1 && userData.name === 'admin')
+                    || (userData.slug === 'admin');
+                
+                this.saveCredentials(baseUrl, username, password, userRole, isAdmin);
+                this.isAuthenticated = true;
+                return true;
             }
 
-            // Guardar credenciales (guardamos como appPassword aunque pueda ser contraseña normal)
-            this.saveCredentials(
-                cleanUrl,
-                username,
-                appPasswordOrPassword,
-                userData.id,
-                userData.roles && userData.roles[0] ? userData.roles[0] : null,
-                userData.capabilities && userData.capabilities.administrator
-            );
-
-            this.isAuthenticated = true;
-            return { success: true };
+            // Si ambos fallan, dar mensaje de error específico
+            if (wpResponse.status === 401 || wcResponse.status === 401) {
+                throw new Error('Credenciales inválidas. Verifica tu usuario y contraseña. Si usas Application Passwords, asegúrate de usar la contraseña de aplicación, no tu contraseña normal.');
+            } else if (wpResponse.status === 403 || wcResponse.status === 403) {
+                throw new Error('Acceso denegado. El usuario debe tener rol de Shop Manager o Administrator.');
+            } else if (wpResponse.status === 404 || wcResponse.status === 404) {
+                throw new Error('URL no encontrada. Verifica que la URL sea correcta y que WooCommerce esté instalado.');
+            } else {
+                throw new Error(`Error de conexión (${wpResponse.status || wcResponse.status}). Verifica que Basic Auth esté habilitado en tu WordPress.`);
+            }
         } catch (error) {
-            console.error('Error en login:', error);
+            console.error('Error de autenticación:', error);
+            
+            // Si es un error de red
+            if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError')) {
+                throw new Error('No se pudo conectar al servidor. Verifica que la URL sea correcta y que el sitio esté accesible.');
+            }
+            
+            // Re-lanzar el error con el mensaje personalizado
             throw error;
         }
     }
 
-    // Obtener headers de autenticación (Basic Auth)
+    // Obtener headers de autenticación para las peticiones
     getAuthHeaders() {
-        if (!this.isAuthenticated || !this.username || !this.appPassword) {
-            throw new Error('No autenticado');
+        if (!this.baseUrl || !this.username || !this.password) {
+            console.error('Credenciales faltantes:', {
+                baseUrl: this.baseUrl,
+                username: this.username ? 'presente' : 'faltante',
+                password: this.password ? 'presente' : 'faltante'
+            });
+            throw new Error('No hay credenciales guardadas. Por favor, inicia sesión nuevamente.');
         }
-        
-        const credentials = btoa(`${this.username}:${this.appPassword}`);
-        
+
+        const credentials = btoa(`${this.username}:${this.password}`);
         return {
             'Authorization': `Basic ${credentials}`,
             'Content-Type': 'application/json'
@@ -170,19 +231,19 @@ class Auth {
     logout() {
         this.baseUrl = null;
         this.username = null;
-        this.appPassword = null;
+        this.password = null;
         this.isAuthenticated = false;
         this.userRole = null;
         this.isAdmin = false;
-        this.userId = null;
         localStorage.removeItem('plaza_auth');
     }
 
     // Verificar si está autenticado
     checkAuth() {
-        return this.isAuthenticated && this.baseUrl && this.username && this.appPassword;
+        return this.isAuthenticated && this.baseUrl && this.username && this.password;
     }
 }
 
 // Instancia global
 const auth = new Auth();
+

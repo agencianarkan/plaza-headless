@@ -25,13 +25,12 @@ class WooCommerceAPI {
         }
     }
 
-    // Hacer petición a la API (usando proxy para evitar CORS)
+    // Hacer petición a la API
     async request(endpoint, options = {}) {
         if (!this.baseUrl) {
             this.baseUrl = auth.getBaseUrl();
         }
 
-        // Petición directa a WooCommerce API (Basic Auth no tiene problemas de CORS si está configurado)
         const url = `${this.baseUrl}/wp-json/wc/v3${endpoint}`;
         const headers = this.getHeaders();
 
