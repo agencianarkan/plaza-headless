@@ -12,6 +12,34 @@ if (!defined('ABSPATH')) {
 }
 
 /**
+ * Manejar CORS para peticiones OPTIONS ANTES de que WordPress cargue completamente
+ * Esto es crítico para que funcione el preflight
+ */
+if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS' && 
+    isset($_SERVER['REQUEST_URI']) && 
+    strpos($_SERVER['REQUEST_URI'], '/wp-json/') !== false) {
+    
+    $allowed_origins = array(
+        'https://agencianarkan.github.io',
+        'http://localhost:3000',
+        'http://localhost:8000',
+        'http://127.0.0.1:8000'
+    );
+    
+    $origin = isset($_SERVER['HTTP_ORIGIN']) ? $_SERVER['HTTP_ORIGIN'] : '';
+    
+    if (in_array($origin, $allowed_origins) || !empty($origin)) {
+        header('Access-Control-Allow-Origin: ' . $origin);
+        header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
+        header('Access-Control-Allow-Credentials: true');
+        header('Access-Control-Allow-Headers: Authorization, Content-Type, X-Requested-With');
+        header('Access-Control-Max-Age: 86400');
+        http_response_code(200);
+        exit();
+    }
+}
+
+/**
  * Agregar headers CORS de forma simple
  */
 function plaza_add_cors_headers() {
@@ -53,7 +81,7 @@ function plaza_add_cors_headers() {
  * Manejar OPTIONS requests para CORS (muy temprano, antes de que WordPress procese)
  */
 add_action('plugins_loaded', function() {
-    if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS' && 
+    if (isset($_SERVER['REQUEST_METHOD']) && $_SERVER['REQUEST_METHOD'] === 'OPTIONS' && 
         isset($_SERVER['REQUEST_URI']) && 
         strpos($_SERVER['REQUEST_URI'], '/wp-json/') !== false) {
         plaza_add_cors_headers();
@@ -99,6 +127,14 @@ add_action('rest_api_init', function() {
             }
         }
         return $result;
+    }, 10, 3);
+    
+    // Agregar CORS incluso en errores de REST API
+    add_filter('rest_dispatch_request', function($dispatch_result, $request, $route) {
+        if (strpos($route, '/plaza/v1/') !== false) {
+            plaza_add_cors_headers();
+        }
+        return $dispatch_result;
     }, 10, 3);
     
     // Endpoint para obtener Client ID de Google
@@ -480,73 +516,90 @@ function plaza_options_page() {
  * El usuario genera tokens personalizados desde su perfil de WordPress
  */
 function plaza_login_with_token($request) {
-    // Agregar headers CORS primero
-    plaza_add_cors_headers();
-    
-    $token = $request->get_param('token');
-    
-    if (empty($token)) {
-        return new WP_REST_Response(
-            array('success' => false, 'message' => 'Token requerido'),
-            400
-        );
-    }
-    
-    // Buscar usuario que tenga este token en sus tokens personalizados
-    $users = get_users(array(
-        'meta_key' => 'plaza_tokens',
-        'number' => -1
-    ));
-    
-    $found_user = null;
-    $found_token_data = null;
-    
-    foreach ($users as $user) {
-        $tokens = get_user_meta($user->ID, 'plaza_tokens', true);
-        if (!is_array($tokens)) {
-            continue;
+    try {
+        // Agregar headers CORS primero
+        plaza_add_cors_headers();
+        
+        $token = $request->get_param('token');
+        
+        if (empty($token)) {
+            $response = new WP_REST_Response(
+                array('success' => false, 'message' => 'Token requerido'),
+                400
+            );
+            plaza_add_cors_headers(); // Asegurar CORS en la respuesta
+            return $response;
         }
         
-        foreach ($tokens as $token_data) {
-            if (isset($token_data['token']) && $token_data['token'] === $token) {
-                $found_user = $user;
-                $found_token_data = $token_data;
-                break 2;
+        // Buscar usuario que tenga este token en sus tokens personalizados
+        $users = get_users(array(
+            'meta_key' => 'plaza_tokens',
+            'number' => -1
+        ));
+        
+        $found_user = null;
+        $found_token_data = null;
+        
+        foreach ($users as $user) {
+            $tokens = get_user_meta($user->ID, 'plaza_tokens', true);
+            if (!is_array($tokens)) {
+                continue;
+            }
+            
+            foreach ($tokens as $token_data) {
+                if (isset($token_data['token']) && $token_data['token'] === $token) {
+                    $found_user = $user;
+                    $found_token_data = $token_data;
+                    break 2;
+                }
             }
         }
-    }
-    
-    if (!$found_user) {
+        
+        if (!$found_user) {
+            $response = new WP_REST_Response(
+                array('success' => false, 'message' => 'Token inválido'),
+                401
+            );
+            plaza_add_cors_headers(); // Asegurar CORS en la respuesta
+            return $response;
+        }
+        
+        $user_id = $found_user->ID;
+        
+        // Verificar permisos
+        $is_admin = user_can($user_id, 'administrator');
+        $is_shop_manager = user_can($user_id, 'manage_woocommerce');
+        
+        if (!$is_admin && !$is_shop_manager) {
+            $response = new WP_REST_Response(
+                array('success' => false, 'message' => 'Se requiere rol de Administrator o Shop Manager'),
+                403
+            );
+            plaza_add_cors_headers(); // Asegurar CORS en la respuesta
+            return $response;
+        }
+        
+        $response = new WP_REST_Response(array(
+            'success' => true,
+            'token' => $token, // Devolver el mismo token (permanente)
+            'baseUrl' => home_url(),
+            'email' => $found_user->user_email,
+            'userId' => $user_id,
+            'username' => $found_user->user_login,
+            'token_name' => isset($found_token_data['name']) ? $found_token_data['name'] : 'Token'
+        ));
+        
+        plaza_add_cors_headers(); // Asegurar CORS en la respuesta
+        return $response;
+        
+    } catch (Exception $e) {
+        // En caso de error, aún así enviar CORS
+        plaza_add_cors_headers();
         return new WP_REST_Response(
-            array('success' => false, 'message' => 'Token inválido'),
-            401
+            array('success' => false, 'message' => 'Error en el servidor: ' . $e->getMessage()),
+            500
         );
     }
-    
-    $user_id = $found_user->ID;
-    
-    // Verificar permisos
-    $is_admin = user_can($user_id, 'administrator');
-    $is_shop_manager = user_can($user_id, 'manage_woocommerce');
-    
-    if (!$is_admin && !$is_shop_manager) {
-        return new WP_REST_Response(
-            array('success' => false, 'message' => 'Se requiere rol de Administrator o Shop Manager'),
-            403
-        );
-    }
-    
-    $response = new WP_REST_Response(array(
-        'success' => true,
-        'token' => $token, // Devolver el mismo token (permanente)
-        'baseUrl' => home_url(),
-        'email' => $found_user->user_email,
-        'userId' => $user_id,
-        'username' => $found_user->user_login,
-        'token_name' => isset($found_token_data['name']) ? $found_token_data['name'] : 'Token'
-    ));
-    
-    return $response;
 }
 
 /**
