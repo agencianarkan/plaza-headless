@@ -12,42 +12,49 @@ if (!defined('ABSPATH')) {
 }
 
 /**
- * Manejar peticiones OPTIONS (preflight) para CORS
+ * Obtener headers HTTP (compatible con todos los servidores)
+ * Definir primero para que esté disponible en todos los hooks
  */
-add_action('template_redirect', function() {
-    // Solo procesar si es una petición OPTIONS a la API REST de Plaza
-    if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS' && 
-        isset($_SERVER['REQUEST_URI']) && 
-        strpos($_SERVER['REQUEST_URI'], '/wp-json/plaza/') !== false) {
-        
-        $allowed_origins = array(
-            'https://agencianarkan.github.io',
-            'http://localhost:3000',
-            'http://localhost:8000',
-            'http://127.0.0.1:8000'
-        );
-        
-        $origin = isset($_SERVER['HTTP_ORIGIN']) ? $_SERVER['HTTP_ORIGIN'] : '';
-        
-        if (in_array($origin, $allowed_origins)) {
-            header('Access-Control-Allow-Origin: ' . $origin);
-            header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
-            header('Access-Control-Allow-Credentials: true');
-            header('Access-Control-Allow-Headers: Authorization, Content-Type, X-Requested-With');
-            header('Access-Control-Max-Age: 86400');
-            status_header(200);
-            exit();
+function plaza_get_all_headers() {
+    if (function_exists('getallheaders')) {
+        $headers = getallheaders();
+        if ($headers) {
+            return $headers;
         }
     }
-}, 1);
+    
+    // Fallback para servidores que no tienen getallheaders()
+    $headers = array();
+    foreach ($_SERVER as $name => $value) {
+        if (substr($name, 0, 5) == 'HTTP_') {
+            $header_name = str_replace(' ', '-', ucwords(strtolower(str_replace('_', ' ', substr($name, 5)))));
+            $headers[$header_name] = $value;
+        }
+    }
+    
+    // También verificar Authorization directamente
+    if (isset($_SERVER['HTTP_AUTHORIZATION'])) {
+        $headers['Authorization'] = $_SERVER['HTTP_AUTHORIZATION'];
+    } elseif (isset($_SERVER['REDIRECT_HTTP_AUTHORIZATION'])) {
+        $headers['Authorization'] = $_SERVER['REDIRECT_HTTP_AUTHORIZATION'];
+    }
+    
+    return $headers;
+}
 
 /**
  * Agregar headers CORS antes de servir respuesta REST
  */
-add_filter('rest_pre_serve_request', function($served, $result, $request, $server) {
+add_filter('rest_pre_serve_request', 'plaza_add_cors_headers', 10, 4);
+
+function plaza_add_cors_headers($served, $result, $request, $server) {
     // Solo agregar headers para endpoints de Plaza
+    if (!is_object($request) || !method_exists($request, 'get_route')) {
+        return $served;
+    }
+    
     $route = $request->get_route();
-    if (strpos($route, '/plaza/v1/') === false) {
+    if (empty($route) || strpos($route, '/plaza/v1/') === false) {
         return $served;
     }
     
@@ -69,7 +76,7 @@ add_filter('rest_pre_serve_request', function($served, $result, $request, $serve
     }
     
     return $served;
-}, 10, 4);
+}
 
 /**
  * Registrar endpoint personalizado para subir imágenes
@@ -121,6 +128,7 @@ add_action('rest_api_init', function() {
     ));
 });
 
+// Las funciones se definen después, pero los hooks se registran aquí
 // Middleware: Interceptar peticiones REST para validar tokens JWT
 add_filter('rest_authentication_errors', 'plaza_rest_authentication', 10, 2);
 
@@ -204,23 +212,6 @@ function plaza_options_page() {
     <?php
 }
 
-/**
- * Obtener headers HTTP (compatible con todos los servidores)
- */
-function plaza_get_all_headers() {
-    if (function_exists('getallheaders')) {
-        return getallheaders();
-    }
-    
-    // Fallback para servidores que no tienen getallheaders()
-    $headers = array();
-    foreach ($_SERVER as $name => $value) {
-        if (substr($name, 0, 5) == 'HTTP_') {
-            $headers[str_replace(' ', '-', ucwords(strtolower(str_replace('_', ' ', substr($name, 5)))))] = $value;
-        }
-    }
-    return $headers;
-}
 
 /**
  * Middleware: Validar tokens JWT en peticiones REST
@@ -235,6 +226,11 @@ function plaza_rest_authentication($result, $server) {
     $request_uri = isset($_SERVER['REQUEST_URI']) ? $_SERVER['REQUEST_URI'] : '';
     if (strpos($request_uri, '/wp-json/wc/v3/') === false) {
         return $result; // No es una petición a WooCommerce, dejar pasar
+    }
+    
+    // Verificar que las funciones necesarias existan
+    if (!function_exists('plaza_get_all_headers') || !function_exists('plaza_validate_token')) {
+        return $result; // Si no existen las funciones, no interferir
     }
     
     // Obtener token del header Authorization
@@ -400,37 +396,21 @@ function plaza_upload_image($request) {
 /**
  * Obtener Client ID de Google (público)
  */
-function plaza_get_google_client_id($request = null) {
-    try {
-        $client_id = get_option('plaza_google_client_id', '');
-        
-        if (empty($client_id)) {
-            return new WP_Error(
-                'not_configured', 
-                'Google OAuth no está configurado. Ve a Configuración > Plaza para configurarlo.', 
-                array('status' => 404)
-            );
-        }
-        
-        $response = array(
-            'client_id' => $client_id,
-            'configured' => true
-        );
-        
-        return $response;
-    } catch (Exception $e) {
+function plaza_get_google_client_id($request) {
+    $client_id = get_option('plaza_google_client_id', '');
+    
+    if (empty($client_id)) {
         return new WP_Error(
-            'server_error',
-            'Error en el servidor: ' . $e->getMessage(),
-            array('status' => 500)
-        );
-    } catch (Error $e) {
-        return new WP_Error(
-            'server_error',
-            'Error fatal: ' . $e->getMessage(),
-            array('status' => 500)
+            'not_configured', 
+            'Google OAuth no está configurado. Ve a Configuración > Plaza para configurarlo.', 
+            array('status' => 404)
         );
     }
+    
+    return array(
+        'client_id' => $client_id,
+        'configured' => true
+    );
 }
 
 /**
