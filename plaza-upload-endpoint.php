@@ -173,7 +173,11 @@ function plaza_direct_login($request) {
     }
     
     // Verificar permisos (Administrator o Shop Manager)
-    if (!user_can($user->ID, 'manage_woocommerce') && !user_can($user->ID, 'administrator')) {
+    // Verificar primero si es administrator
+    $is_admin = user_can($user->ID, 'administrator');
+    $is_shop_manager = user_can($user->ID, 'manage_woocommerce');
+    
+    if (!$is_admin && !$is_shop_manager) {
         return new WP_Error('insufficient_permissions', 'Se requiere rol de Administrator o Shop Manager', array('status' => 403));
     }
     

@@ -17,18 +17,6 @@ const state = {
 // Inicialización
 document.addEventListener('DOMContentLoaded', () => {
     try {
-        // Verificar si es un callback de Google OAuth
-        const urlParams = new URLSearchParams(window.location.search);
-        const code = urlParams.get('code');
-        const error = urlParams.get('error');
-        
-        if (code || error) {
-            // Es un callback de Google, manejar primero
-            handleGoogleCallback();
-            setupEventListeners();
-            return;
-        }
-        
         auth.init();
         
         if (auth.checkAuth()) {
@@ -148,12 +136,6 @@ function setupEventListeners() {
     const loginForm = document.getElementById('login-form');
     if (loginForm) {
         loginForm.addEventListener('submit', handleDirectLogin);
-    }
-    
-    // Google OAuth (opcional)
-    const googleLoginBtn = document.getElementById('google-login-btn');
-    if (googleLoginBtn) {
-        googleLoginBtn.addEventListener('click', handleGoogleLogin);
     }
     
     // Nextend Social Login (opcional)
@@ -411,90 +393,6 @@ async function handleNextendLogin() {
     }
 }
 
-// ========== GOOGLE OAUTH ==========
-
-async function handleGoogleLogin() {
-    const errorDiv = document.getElementById('login-error');
-    errorDiv.textContent = '';
-    errorDiv.classList.remove('show');
-    
-    // Pedir URL de la tienda
-    const baseUrl = document.getElementById('woocommerce-url').value;
-    
-    if (!baseUrl) {
-        errorDiv.textContent = 'Por favor ingresa la URL de tu tienda WooCommerce';
-        errorDiv.classList.add('show');
-        showToast('URL requerida', 'error');
-        return;
-    }
-    
-    try {
-        showToast('Iniciando autenticación con Google...', 'success');
-        await auth.authWithGoogle(baseUrl);
-        // La redirección a Google se hace automáticamente en authWithGoogle
-    } catch (error) {
-        errorDiv.textContent = error.message;
-        errorDiv.classList.add('show');
-        showToast('Error: ' + error.message, 'error');
-    }
-}
-
-async function handleGoogleCallback() {
-    const urlParams = new URLSearchParams(window.location.search);
-    const code = urlParams.get('code');
-    const error = urlParams.get('error');
-    
-    // Limpiar URL
-    window.history.replaceState({}, document.title, window.location.pathname);
-    
-    if (error) {
-        const errorDiv = document.getElementById('login-error');
-        errorDiv.textContent = 'Error de autenticación con Google: ' + error;
-        errorDiv.classList.add('show');
-        showToast('Error de autenticación con Google', 'error');
-        return;
-    }
-    
-    if (!code) {
-        return; // No hay código, no es un callback de Google
-    }
-    
-    // Obtener baseUrl guardado temporalmente
-    const baseUrl = sessionStorage.getItem('plaza_google_baseurl');
-    sessionStorage.removeItem('plaza_google_baseurl');
-    
-    if (!baseUrl) {
-        const errorDiv = document.getElementById('login-error');
-        errorDiv.textContent = 'Error: No se encontró la URL de la tienda. Por favor, intenta nuevamente.';
-        errorDiv.classList.add('show');
-        showToast('Error: URL no encontrada', 'error');
-        return;
-    }
-    
-    try {
-        showToast('Completando autenticación...', 'success');
-        await auth.handleGoogleCallback(code, baseUrl);
-        wcAPI.init(auth.getBaseUrl());
-        
-        const userInfo = document.getElementById('user-info');
-        userInfo.textContent = `Usuario: ${auth.userId || 'Autenticado'}`;
-        
-        showDashboard();
-        loadDashboard();
-        
-        // Verificar y mostrar menú de envíos después de un breve delay
-        setTimeout(() => {
-            checkAndShowShippingMenu();
-        }, 500);
-        
-        showToast('¡Bienvenido!', 'success');
-    } catch (error) {
-        const errorDiv = document.getElementById('login-error');
-        errorDiv.textContent = error.message;
-        errorDiv.classList.add('show');
-        showToast('Error de autenticación: ' + error.message, 'error');
-    }
-}
 
 function handleLogout() {
     auth.logout();
