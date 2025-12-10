@@ -75,7 +75,10 @@ class Auth {
             const data = await response.json();
 
             if (!response.ok || !data.success) {
-                throw new Error(data.error || 'Error de autenticación');
+                // Incluir mensaje de debug si está disponible
+                const errorMessage = data.error || 'Error de autenticación';
+                const debugMessage = data.debug ? ` (${data.debug})` : '';
+                throw new Error(errorMessage + debugMessage);
             }
 
             // Guardar sesión
@@ -151,3 +154,4 @@ class Auth {
 
 // Instancia global
 const auth = new Auth();
+

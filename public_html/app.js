@@ -17,6 +17,36 @@ const state = {
 // Inicialización
 document.addEventListener('DOMContentLoaded', () => {
     try {
+        // Verificar que las dependencias estén cargadas
+        if (typeof auth === 'undefined') {
+            console.error('auth no está definido. Verifica que auth.js se cargue correctamente.');
+            showLogin();
+            return;
+        }
+        
+        if (typeof wcAPI === 'undefined') {
+            console.error('wcAPI no está definido. Verifica que api.js se cargue correctamente.');
+            // Esperar un momento y reintentar
+            setTimeout(() => {
+                if (typeof wcAPI === 'undefined') {
+                    console.error('wcAPI aún no está disponible después de esperar.');
+                    alert('Error: No se pudo cargar la aplicación. Por favor, recarga la página.');
+                } else {
+                    initializeApp();
+                }
+            }, 100);
+            return;
+        }
+        
+        initializeApp();
+    } catch (error) {
+        console.error('Error en inicialización:', error);
+        showLogin();
+    }
+});
+
+function initializeApp() {
+    try {
         auth.init();
         
         if (auth.checkAuth()) {
@@ -46,12 +76,12 @@ document.addEventListener('DOMContentLoaded', () => {
             showLogin();
         }
     } catch (error) {
-        console.error('Error en inicialización:', error);
+        console.error('Error en initializeApp:', error);
         showLogin();
     }
-
+    
     setupEventListeners();
-});
+}
 
 // Función para verificar y mostrar el menú de envíos
 // Por ahora mostramos el menú siempre, el backend manejará los permisos
@@ -307,7 +337,8 @@ function createProductRow(product) {
     let productUrl = product.permalink;
     if (!productUrl) {
         try {
-            const baseUrl = wcAPI.baseUrl || auth.getBaseUrl();
+            const tienda = auth.getTienda();
+            const baseUrl = tienda ? tienda.url : null;
             if (product.slug) {
                 productUrl = `${baseUrl}/product/${product.slug}`;
             } else {
@@ -538,7 +569,9 @@ function viewProductFromRow(button) {
 async function getProductUrlAndOpen(productId) {
     try {
         const product = await wcAPI.getProduct(productId);
-        const url = product.permalink || `${wcAPI.baseUrl || auth.getBaseUrl()}/product/${product.slug || productId}`;
+        const tienda = auth.getTienda();
+        const baseUrl = tienda ? tienda.url : '';
+        const url = product.permalink || `${baseUrl}/product/${product.slug || productId}`;
         viewProduct(url);
     } catch (error) {
         console.error('Error obteniendo URL del producto:', error);
