@@ -69,7 +69,10 @@ add_action('rest_api_init', function() {
             if (empty($client_id)) {
                 return new WP_Error('not_configured', 'Google OAuth no está configurado', array('status' => 404));
             }
-            return array('client_id' => $client_id);
+            return array(
+                'client_id' => $client_id,
+                'configured' => true
+            );
         },
         'permission_callback' => '__return_true',
     ));
