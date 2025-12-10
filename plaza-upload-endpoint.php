@@ -43,21 +43,9 @@ function plaza_get_all_headers() {
 }
 
 /**
- * Agregar headers CORS antes de servir respuesta REST
+ * Agregar headers CORS - Función helper
  */
-add_filter('rest_pre_serve_request', 'plaza_add_cors_headers', 10, 4);
-
-function plaza_add_cors_headers($served, $result, $request, $server) {
-    // Solo agregar headers para endpoints de Plaza
-    if (!is_object($request) || !method_exists($request, 'get_route')) {
-        return $served;
-    }
-    
-    $route = $request->get_route();
-    if (empty($route) || strpos($route, '/plaza/v1/') === false) {
-        return $served;
-    }
-    
+function plaza_add_cors_headers() {
     $allowed_origins = array(
         'https://agencianarkan.github.io',
         'http://localhost:3000',
@@ -74,14 +62,35 @@ function plaza_add_cors_headers($served, $result, $request, $server) {
         header('Access-Control-Allow-Headers: Authorization, Content-Type, X-Requested-With');
         header('Access-Control-Max-Age: 86400');
     }
-    
-    return $served;
 }
+
+/**
+ * Agregar headers CORS antes de servir respuesta REST
+ */
+add_filter('rest_pre_serve_request', function($served, $result, $request, $server) {
+    // Solo agregar headers para endpoints de Plaza
+    if (is_object($request) && method_exists($request, 'get_route')) {
+        $route = $request->get_route();
+        if (!empty($route) && strpos($route, '/plaza/v1/') !== false) {
+            plaza_add_cors_headers();
+        }
+    }
+    return $served;
+}, 10, 4);
 
 /**
  * Registrar endpoint personalizado para subir imágenes
  */
 add_action('rest_api_init', function() {
+    // Manejar peticiones OPTIONS (preflight) para CORS
+    if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS' && 
+        isset($_SERVER['REQUEST_URI']) && 
+        strpos($_SERVER['REQUEST_URI'], '/wp-json/plaza/v1/') !== false) {
+        plaza_add_cors_headers();
+        status_header(200);
+        exit();
+    }
+    
     // Endpoint para subir imágenes
     register_rest_route('plaza/v1', '/upload-image', array(
         'methods' => 'POST',
@@ -106,6 +115,16 @@ add_action('rest_api_init', function() {
         'methods' => 'GET',
         'callback' => 'plaza_get_google_client_id',
         'permission_callback' => '__return_true', // Público
+    ));
+    
+    // Endpoint de prueba para diagnosticar
+    register_rest_route('plaza/v1', '/test', array(
+        'methods' => 'GET',
+        'callback' => function() {
+            plaza_add_cors_headers();
+            return array('success' => true, 'message' => 'Endpoint funciona');
+        },
+        'permission_callback' => '__return_true',
     ));
     
     // Endpoint para autenticación con Google OAuth
@@ -397,6 +416,9 @@ function plaza_upload_image($request) {
  * Obtener Client ID de Google (público)
  */
 function plaza_get_google_client_id($request) {
+    // Agregar headers CORS siempre
+    plaza_add_cors_headers();
+    
     $client_id = get_option('plaza_google_client_id', '');
     
     if (empty($client_id)) {
@@ -417,6 +439,9 @@ function plaza_get_google_client_id($request) {
  * Autenticación con Google OAuth
  */
 function plaza_google_auth($request) {
+    // Agregar headers CORS siempre
+    plaza_add_cors_headers();
+    
     $code = $request->get_param('code');
     $redirect_uri = $request->get_param('redirect_uri');
     
