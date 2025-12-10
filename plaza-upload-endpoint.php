@@ -14,31 +14,32 @@ if (!defined('ABSPATH')) {
 /**
  * Manejar peticiones OPTIONS (preflight) para CORS
  */
-add_action('rest_api_init', function() {
-    // Solo procesar si es una petición a la API REST de Plaza
-    if (isset($_SERVER['REQUEST_URI']) && strpos($_SERVER['REQUEST_URI'], '/wp-json/plaza/') !== false) {
-        if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
-            $allowed_origins = array(
-                'https://agencianarkan.github.io',
-                'http://localhost:3000',
-                'http://localhost:8000',
-                'http://127.0.0.1:8000'
-            );
-            
-            $origin = isset($_SERVER['HTTP_ORIGIN']) ? $_SERVER['HTTP_ORIGIN'] : '';
-            
-            if (in_array($origin, $allowed_origins)) {
-                header('Access-Control-Allow-Origin: ' . $origin);
-                header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
-                header('Access-Control-Allow-Credentials: true');
-                header('Access-Control-Allow-Headers: Authorization, Content-Type, X-Requested-With');
-                header('Access-Control-Max-Age: 86400');
-                status_header(200);
-                exit();
-            }
+add_action('template_redirect', function() {
+    // Solo procesar si es una petición OPTIONS a la API REST de Plaza
+    if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS' && 
+        isset($_SERVER['REQUEST_URI']) && 
+        strpos($_SERVER['REQUEST_URI'], '/wp-json/plaza/') !== false) {
+        
+        $allowed_origins = array(
+            'https://agencianarkan.github.io',
+            'http://localhost:3000',
+            'http://localhost:8000',
+            'http://127.0.0.1:8000'
+        );
+        
+        $origin = isset($_SERVER['HTTP_ORIGIN']) ? $_SERVER['HTTP_ORIGIN'] : '';
+        
+        if (in_array($origin, $allowed_origins)) {
+            header('Access-Control-Allow-Origin: ' . $origin);
+            header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
+            header('Access-Control-Allow-Credentials: true');
+            header('Access-Control-Allow-Headers: Authorization, Content-Type, X-Requested-With');
+            header('Access-Control-Max-Age: 86400');
+            status_header(200);
+            exit();
         }
     }
-}, 10);
+}, 1);
 
 /**
  * Agregar headers CORS antes de servir respuesta REST
@@ -399,21 +400,37 @@ function plaza_upload_image($request) {
 /**
  * Obtener Client ID de Google (público)
  */
-function plaza_get_google_client_id($request) {
-    $client_id = get_option('plaza_google_client_id', '');
-    
-    if (empty($client_id)) {
+function plaza_get_google_client_id($request = null) {
+    try {
+        $client_id = get_option('plaza_google_client_id', '');
+        
+        if (empty($client_id)) {
+            return new WP_Error(
+                'not_configured', 
+                'Google OAuth no está configurado. Ve a Configuración > Plaza para configurarlo.', 
+                array('status' => 404)
+            );
+        }
+        
+        $response = array(
+            'client_id' => $client_id,
+            'configured' => true
+        );
+        
+        return $response;
+    } catch (Exception $e) {
         return new WP_Error(
-            'not_configured', 
-            'Google OAuth no está configurado. Ve a Configuración > Plaza para configurarlo.', 
-            array('status' => 404)
+            'server_error',
+            'Error en el servidor: ' . $e->getMessage(),
+            array('status' => 500)
+        );
+    } catch (Error $e) {
+        return new WP_Error(
+            'server_error',
+            'Error fatal: ' . $e->getMessage(),
+            array('status' => 500)
         );
     }
-    
-    return array(
-        'client_id' => $client_id,
-        'configured' => true
-    );
 }
 
 /**
