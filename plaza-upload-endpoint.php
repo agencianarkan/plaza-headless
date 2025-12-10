@@ -552,7 +552,7 @@ function plaza_get_google_user_info($access_token) {
 }
 
 /**
- * Generar Token JWT para un usuario
+ * Generar Token Simple para un usuario
  */
 function plaza_generate_jwt_token($user_id) {
     $user = get_user_by('ID', $user_id);
@@ -561,84 +561,56 @@ function plaza_generate_jwt_token($user_id) {
         return new WP_Error('user_not_found', 'Usuario no encontrado', array('status' => 404));
     }
     
-    // Generar token único y seguro
-    $token_data = array(
-        'user_id' => $user_id,
-        'email' => $user->user_email,
-        'login' => $user->user_login,
-        'created_at' => time(),
-        'expires_at' => time() + (30 * 24 * 60 * 60) // 30 días
-    );
+    // Generar token aleatorio simple y único (32 caracteres)
+    $token = wp_generate_password(32, false, false);
     
-    // Obtener o generar clave secreta para firmar tokens
-    $secret_key = get_option('plaza_jwt_secret', '');
-    if (empty($secret_key)) {
-        $secret_key = wp_generate_password(64, true, true);
-        update_option('plaza_jwt_secret', $secret_key);
-    }
+    // Calcular expiración (30 días)
+    $expires_at = time() + (30 * 24 * 60 * 60);
     
-    // Crear payload codificado
-    $payload = base64_encode(json_encode($token_data));
-    
-    // Crear firma HMAC
-    $signature = hash_hmac('sha256', $payload, $secret_key);
-    
-    // Crear token JWT (payload.signature)
-    $token = $payload . '.' . $signature;
-    
-    // Guardar token en user meta para validación rápida
-    update_user_meta($user_id, 'plaza_jwt_token', $token);
-    update_user_meta($user_id, 'plaza_jwt_expires', $token_data['expires_at']);
+    // Guardar token en user meta con expiración
+    update_user_meta($user_id, 'plaza_token', $token);
+    update_user_meta($user_id, 'plaza_token_expires', $expires_at);
     
     return $token;
 }
 
 /**
- * Validar Token JWT
+ * Validar Token Simple
  */
 function plaza_validate_token($token) {
     if (empty($token)) {
         return false;
     }
     
-    // Separar payload y firma
-    $parts = explode('.', $token);
-    if (count($parts) !== 2) {
+    // Buscar usuario que tenga este token
+    $users = get_users(array(
+        'meta_key' => 'plaza_token',
+        'meta_value' => $token,
+        'number' => 1
+    ));
+    
+    if (empty($users)) {
         return false;
     }
     
-    $payload = $parts[0];
-    $signature = $parts[1];
-    
-    // Obtener clave secreta
-    $secret_key = get_option('plaza_jwt_secret', '');
-    if (empty($secret_key)) {
-        return false;
-    }
-    
-    // Verificar firma
-    $expected_signature = hash_hmac('sha256', $payload, $secret_key);
-    if (!hash_equals($expected_signature, $signature)) {
-        return false;
-    }
-    
-    // Decodificar payload
-    $token_data = json_decode(base64_decode($payload), true);
-    if (!$token_data || !isset($token_data['user_id'])) {
-        return false;
-    }
+    $user = $users[0];
+    $user_id = $user->ID;
     
     // Verificar expiración
-    if (isset($token_data['expires_at']) && time() > $token_data['expires_at']) {
+    $expires_at = get_user_meta($user_id, 'plaza_token_expires', true);
+    if (empty($expires_at) || time() > $expires_at) {
+        // Token expirado, limpiar
+        delete_user_meta($user_id, 'plaza_token');
+        delete_user_meta($user_id, 'plaza_token_expires');
         return false;
     }
     
-    // Verificar que el usuario existe
-    $user = get_user_by('ID', $token_data['user_id']);
-    if (!$user) {
+    // Verificar que el usuario existe y está activo
+    $user_data = get_user_by('ID', $user_id);
+    if (!$user_data) {
         return false;
     }
     
-    return $token_data['user_id'];
+    return $user_id;
 }
 
