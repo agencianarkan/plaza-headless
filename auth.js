@@ -256,77 +256,10 @@ class Auth {
     }
 
     // Autenticar con WordPress (método antiguo - mantener por compatibilidad)
+    // NOTA: Este método ya no se usa, se mantiene solo por compatibilidad
     async authenticate(baseUrl, username, password) {
-
-            // Si falla WooCommerce, intentar con WordPress REST API
-            const wpUrl = `${cleanUrl}/wp-json/wp/v2/users/me`;
-            const wpResponse = await fetch(wpUrl, {
-                method: 'GET',
-                headers: {
-                    'Authorization': `Basic ${credentials}`,
-                    'Content-Type': 'application/json'
-                }
-            });
-
-            if (wpResponse.ok) {
-                // Autenticación exitosa con WordPress
-                const userData = await wpResponse.json();
-                let roles = userData.roles;
-                
-                // Si no hay roles, intentar obtener con contexto edit
-                if (!roles) {
-                    try {
-                        const editUrl = `${cleanUrl}/wp-json/wp/v2/users/me?context=edit`;
-                        const editResponse = await fetch(editUrl, {
-                            method: 'GET',
-                            headers: {
-                                'Authorization': `Basic ${credentials}`,
-                                'Content-Type': 'application/json'
-                            }
-                        });
-                        if (editResponse.ok) {
-                            const editData = await editResponse.json();
-                            roles = editData.roles;
-                        }
-                    } catch (e) {
-                        // Si falla, usar heurística: admin con ID 1 o nombre 'admin'
-                        if (userData.id === 1 || userData.name === 'admin' || userData.slug === 'admin') {
-                            roles = ['administrator'];
-                        }
-                    }
-                }
-                
-                const userRole = roles && roles.length > 0 ? roles[0] : null;
-                const isAdmin = roles && roles.includes('administrator') 
-                    || (userData.id === 1 && userData.name === 'admin')
-                    || (userData.slug === 'admin');
-                
-                this.saveCredentials(baseUrl, username, password, userRole, isAdmin);
-                this.isAuthenticated = true;
-                return true;
-            }
-
-            // Si ambos fallan, dar mensaje de error específico
-            if (wpResponse.status === 401 || wcResponse.status === 401) {
-                throw new Error('Credenciales inválidas. Verifica tu usuario y contraseña. Si usas Application Passwords, asegúrate de usar la contraseña de aplicación, no tu contraseña normal.');
-            } else if (wpResponse.status === 403 || wcResponse.status === 403) {
-                throw new Error('Acceso denegado. El usuario debe tener rol de Shop Manager o Administrator.');
-            } else if (wpResponse.status === 404 || wcResponse.status === 404) {
-                throw new Error('URL no encontrada. Verifica que la URL sea correcta y que WooCommerce esté instalado.');
-            } else {
-                throw new Error(`Error de conexión (${wpResponse.status || wcResponse.status}). Verifica que Basic Auth esté habilitado en tu WordPress.`);
-            }
-        } catch (error) {
-            console.error('Error de autenticación:', error);
-            
-            // Si es un error de red
-            if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError')) {
-                throw new Error('No se pudo conectar al servidor. Verifica que la URL sea correcta y que el sitio esté accesible.');
-            }
-            
-            // Re-lanzar el error con el mensaje personalizado
-            throw error;
-        }
+        // Redirigir al método directLogin
+        return await this.directLogin(baseUrl, username, password);
     }
 
     // Obtener headers de autenticación para las peticiones (Bearer Token)
