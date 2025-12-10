@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Prueba de Endpoints Plaza</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+            padding: 30px;
+        }
+        
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 28px;
+        }
+        
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+        
+        .section {
+            margin-bottom: 30px;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            border-left: 4px solid #667eea;
+        }
+        
+        .section h2 {
+            color: #333;
+            margin-bottom: 15px;
+            font-size: 20px;
+        }
+        
+        .input-group {
+            margin-bottom: 15px;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 5px;
+            color: #555;
+            font-weight: 500;
+        }
+        
+        input[type="text"], input[type="url"] {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 6px;
+            font-size: 14px;
+            transition: border-color 0.3s;
+        }
+        
+        input[type="text"]:focus, input[type="url"]:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        
+        button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+            margin-right: 10px;
+            margin-top: 10px;
+        }
+        
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+        
+        button:active {
+            transform: translateY(0);
+        }
+        
+        button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .result {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 6px;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        
+        .result.success {
+            background: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+        }
+        
+        .result.error {
+            background: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+        }
+        
+        .result.info {
+            background: #d1ecf1;
+            border: 1px solid #bee5eb;
+            color: #0c5460;
+        }
+        
+        .status {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 600;
+            margin-left: 10px;
+        }
+        
+        .status.success {
+            background: #28a745;
+            color: white;
+        }
+        
+        .status.error {
+            background: #dc3545;
+            color: white;
+        }
+        
+        .status.pending {
+            background: #ffc107;
+            color: #000;
+        }
+        
+        .info-box {
+            background: #e7f3ff;
+            border-left: 4px solid #2196F3;
+            padding: 15px;
+            margin-bottom: 20px;
+            border-radius: 4px;
+        }
+        
+        .info-box code {
+            background: rgba(0,0,0,0.1);
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🧪 Prueba de Endpoints Plaza</h1>
+        <p class="subtitle">Herramienta de diagnóstico para verificar que los endpoints funcionan correctamente</p>
+        
+        <div class="info-box">
+            <strong>💡 Instrucciones:</strong><br>
+            1. Ingresa la URL de tu WordPress (sin barra final)<br>
+            2. Haz clic en "Probar Endpoint /test" para verificar que el plugin funciona<br>
+            3. Si funciona, prueba el login con token ingresando un token válido
+        </div>
+        
+        <div class="section">
+            <h2>1. Configuración</h2>
+            <div class="input-group">
+                <label for="baseUrl">URL de WordPress:</label>
+                <input type="url" id="baseUrl" placeholder="https://mueblescatalinacuracautin.cl" value="https://mueblescatalinacuracautin.cl">
+            </div>
+        </div>
+        
+        <div class="section">
+            <h2>2. Probar Endpoint /test</h2>
+            <p style="margin-bottom: 15px; color: #666;">Este endpoint verifica que el plugin está funcionando y que CORS está configurado correctamente.</p>
+            <button onclick="testEndpoint()">Probar Endpoint /test</button>
+            <div id="testResult"></div>
+        </div>
+        
+        <div class="section">
+            <h2>3. Probar Login con Token</h2>
+            <p style="margin-bottom: 15px; color: #666;">Ingresa un token personalizado generado desde tu perfil de WordPress.</p>
+            <div class="input-group">
+                <label for="token">Token:</label>
+                <input type="text" id="token" placeholder="Pega tu token aquí" style="font-family: monospace;">
+            </div>
+            <button onclick="testLoginToken()">Probar Login con Token</button>
+            <div id="loginResult"></div>
+        </div>
+        
+        <div class="section">
+            <h2>4. Información de la Petición</h2>
+            <div id="requestInfo" class="result info">Haz una petición para ver los detalles aquí...</div>
+        </div>
+    </div>
+    
+    <script>
+        function showResult(elementId, data, isError = false) {
+            const element = document.getElementById(elementId);
+            const className = isError ? 'error' : 'success';
+            const status = isError ? '<span class="status error">ERROR</span>' : '<span class="status success">ÉXITO</span>';
+            
+            let content = status + '\n\n';
+            
+            if (typeof data === 'string') {
+                content += data;
+            } else {
+                content += JSON.stringify(data, null, 2);
+            }
+            
+            element.innerHTML = `<div class="result ${className}">${escapeHtml(content)}</div>`;
+        }
+        
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
+        function showRequestInfo(method, url, headers, body) {
+            const info = document.getElementById('requestInfo');
+            let content = `MÉTODO: ${method}\n`;
+            content += `URL: ${url}\n\n`;
+            content += `HEADERS:\n${JSON.stringify(headers, null, 2)}\n\n`;
+            if (body) {
+                content += `BODY:\n${JSON.stringify(body, null, 2)}`;
+            }
+            info.textContent = content;
+        }
+        
+        async function testEndpoint() {
+            const baseUrl = document.getElementById('baseUrl').value.trim().replace(/\/$/, '');
+            const url = `${baseUrl}/wp-json/plaza/v1/test`;
+            
+            const resultDiv = document.getElementById('testResult');
+            resultDiv.innerHTML = '<div class="result info">⏳ Probando...</div>';
+            
+            const headers = {
+                'Content-Type': 'application/json'
+            };
+            
+            showRequestInfo('GET', url, headers, null);
+            
+            try {
+                const response = await fetch(url, {
+                    method: 'GET',
+                    headers: headers,
+                    mode: 'cors',
+                    credentials: 'include'
+                });
+                
+                const data = await response.json().catch(() => ({ error: 'No se pudo parsear la respuesta como JSON' }));
+                
+                if (response.ok) {
+                    showResult('testResult', {
+                        status: response.status,
+                        statusText: response.statusText,
+                        headers: Object.fromEntries(response.headers.entries()),
+                        data: data
+                    }, false);
+                } else {
+                    showResult('testResult', {
+                        status: response.status,
+                        statusText: response.statusText,
+                        error: data
+                    }, true);
+                }
+            } catch (error) {
+                showResult('testResult', {
+                    error: error.message,
+                    type: error.name,
+                    stack: error.stack
+                }, true);
+            }
+        }
+        
+        async function testLoginToken() {
+            const baseUrl = document.getElementById('baseUrl').value.trim().replace(/\/$/, '');
+            const token = document.getElementById('token').value.trim();
+            
+            if (!token) {
+                showResult('loginResult', 'Por favor, ingresa un token', true);
+                return;
+            }
+            
+            const url = `${baseUrl}/wp-json/plaza/v1/login-token`;
+            
+            const resultDiv = document.getElementById('loginResult');
+            resultDiv.innerHTML = '<div class="result info">⏳ Probando login...</div>';
+            
+            const body = { token: token };
+            const headers = {
+                'Content-Type': 'application/json'
+            };
+            
+            showRequestInfo('POST', url, headers, body);
+            
+            try {
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: headers,
+                    body: JSON.stringify(body),
+                    mode: 'cors',
+                    credentials: 'include'
+                });
+                
+                const data = await response.json().catch(() => ({ error: 'No se pudo parsear la respuesta como JSON' }));
+                
+                if (response.ok) {
+                    showResult('loginResult', {
+                        status: response.status,
+                        statusText: response.statusText,
+                        headers: Object.fromEntries(response.headers.entries()),
+                        data: data
+                    }, false);
+                } else {
+                    showResult('loginResult', {
+                        status: response.status,
+                        statusText: response.statusText,
+                        error: data
+                    }, true);
+                }
+            } catch (error) {
+                showResult('loginResult', {
+                    error: error.message,
+                    type: error.name,
+                    stack: error.stack,
+                    note: 'Si ves un error de CORS, verifica que el plugin esté actualizado y que los headers CORS estén configurados correctamente.'
+                }, true);
+            }
+        }
+        
+        // Permitir probar con Enter en el campo de token
+        document.getElementById('token').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                testLoginToken();
+            }
+        });
+    </script>
+</body>
+</html>
+
