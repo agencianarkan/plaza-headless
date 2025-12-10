@@ -114,6 +114,96 @@ add_action('rest_api_init', function() {
 });
 
 /**
+ * Middleware: Validar tokens personalizados en peticiones a WooCommerce
+ */
+add_filter('rest_authentication_errors', 'plaza_rest_authentication', 10, 2);
+
+function plaza_rest_authentication($result, $server) {
+    // Si ya hay un resultado (autenticación exitosa o error específico), no interferir
+    if (!empty($result)) {
+        return $result;
+    }
+    
+    // Solo procesar peticiones a la API de WooCommerce
+    $request_uri = isset($_SERVER['REQUEST_URI']) ? $_SERVER['REQUEST_URI'] : '';
+    if (strpos($request_uri, '/wp-json/wc/v3/') === false) {
+        return $result; // No es una petición a WooCommerce, dejar pasar
+    }
+    
+    // Obtener token del header Authorization
+    $headers = array();
+    foreach ($_SERVER as $key => $value) {
+        if (substr($key, 0, 5) === 'HTTP_') {
+            $header = str_replace(' ', '-', ucwords(strtolower(str_replace('_', ' ', substr($key, 5)))));
+            $headers[$header] = $value;
+        }
+    }
+    
+    $auth_header = isset($headers['Authorization']) ? $headers['Authorization'] : 
+                   (isset($_SERVER['HTTP_AUTHORIZATION']) ? $_SERVER['HTTP_AUTHORIZATION'] : '');
+    
+    if (empty($auth_header) || !preg_match('/Bearer\s+(.*)$/i', $auth_header, $matches)) {
+        return new WP_Error(
+            'plaza_unauthorized',
+            'Token de autorización requerido. Por favor, inicia sesión con tu token personalizado.',
+            array('status' => 401)
+        );
+    }
+    
+    $token = $matches[1];
+    
+    // Buscar token en tokens personalizados
+    $users = get_users(array(
+        'meta_key' => 'plaza_tokens',
+        'number' => -1
+    ));
+    
+    $found_user = null;
+    
+    foreach ($users as $user) {
+        $tokens = get_user_meta($user->ID, 'plaza_tokens', true);
+        if (!is_array($tokens)) {
+            continue;
+        }
+        
+        foreach ($tokens as $token_data) {
+            if (isset($token_data['token']) && $token_data['token'] === $token) {
+                $found_user = $user;
+                break 2;
+            }
+        }
+    }
+    
+    if (!$found_user) {
+        return new WP_Error(
+            'plaza_invalid_token',
+            'Token inválido. Verifica tu token o genera uno nuevo desde tu perfil de WordPress.',
+            array('status' => 401)
+        );
+    }
+    
+    $user_id = $found_user->ID;
+    
+    // Verificar permisos
+    $is_admin = user_can($user_id, 'administrator');
+    $is_shop_manager = user_can($user_id, 'manage_woocommerce');
+    
+    if (!$is_admin && !$is_shop_manager) {
+        return new WP_Error(
+            'plaza_insufficient_permissions',
+            'Se requiere rol de Administrator o Shop Manager',
+            array('status' => 403)
+        );
+    }
+    
+    // Establecer usuario actual para WordPress
+    wp_set_current_user($user_id);
+    
+    // Token válido, permitir acceso
+    return true;
+}
+
+/**
  * Menú de configuración
  */
 add_action('admin_menu', function() {
