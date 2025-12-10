@@ -132,31 +132,21 @@ async function checkAndShowShippingMenu() {
 
 // Event Listeners
 function setupEventListeners() {
-    // Login con token (método principal)
+    // Login con token (único método)
     const loginTokenForm = document.getElementById('login-token-form');
     if (loginTokenForm) {
         loginTokenForm.addEventListener('submit', handleTokenLogin);
     }
-    
-    // Login directo (alternativa)
-    const loginForm = document.getElementById('login-form');
-    if (loginForm) {
-        loginForm.addEventListener('submit', handleDirectLogin);
-    }
-    
-    // Nextend Social Login (opcional)
-    const nextendLoginBtn = document.getElementById('nextend-login-btn');
-    if (nextendLoginBtn) {
-        nextendLoginBtn.addEventListener('click', handleNextendLogin);
-    }
-    
-    // Permitir iniciar sesión con Enter en el campo de URL
-    const urlInput = document.getElementById('woocommerce-url');
-    if (urlInput) {
-        urlInput.addEventListener('keypress', (e) => {
+    // Permitir iniciar sesión con Enter en el campo de token
+    const tokenInput = document.getElementById('token');
+    if (tokenInput) {
+        tokenInput.addEventListener('keypress', (e) => {
             if (e.key === 'Enter') {
                 e.preventDefault();
-                handleGoogleLogin();
+                const form = document.getElementById('login-token-form');
+                if (form) {
+                    form.dispatchEvent(new Event('submit'));
+                }
             }
         });
     }
@@ -347,96 +337,6 @@ async function handleTokenLogin(e) {
     }
 }
 
-// ========== LOGIN DIRECTO ==========
-
-async function handleDirectLogin(e) {
-    e.preventDefault();
-    
-    const errorDiv = document.getElementById('login-error');
-    errorDiv.textContent = '';
-    errorDiv.classList.remove('show');
-    
-    const baseUrl = document.getElementById('woocommerce-url').value;
-    const username = document.getElementById('username').value;
-    const password = document.getElementById('password').value;
-    
-    if (!baseUrl || !username || !password) {
-        errorDiv.textContent = 'Por favor completa todos los campos';
-        errorDiv.classList.add('show');
-        showToast('Campos requeridos', 'error');
-        return;
-    }
-    
-    try {
-        showToast('Iniciando sesión...', 'success');
-        await auth.directLogin(baseUrl, username, password);
-        
-        wcAPI.init(auth.getBaseUrl());
-        showDashboard();
-        loadDashboard();
-        checkAndShowShippingMenu();
-        
-        // Limpiar formulario
-        document.getElementById('username').value = '';
-        document.getElementById('password').value = '';
-        
-        showToast('¡Bienvenido!', 'success');
-    } catch (error) {
-        errorDiv.textContent = error.message;
-        errorDiv.classList.add('show');
-        showToast('Error: ' + error.message, 'error');
-    }
-}
-
-// ========== NEXTEND SOCIAL LOGIN ==========
-
-async function handleNextendLogin() {
-    const errorDiv = document.getElementById('login-error');
-    errorDiv.textContent = '';
-    errorDiv.classList.remove('show');
-    
-    const baseUrl = document.getElementById('woocommerce-url').value;
-    
-    if (!baseUrl) {
-        errorDiv.textContent = 'Por favor ingresa la URL de tu tienda WooCommerce';
-        errorDiv.classList.add('show');
-        showToast('URL requerida', 'error');
-        return;
-    }
-    
-    try {
-        showToast('Conectando con Nextend Social Login...', 'success');
-        
-        // Intentar obtener token desde sesión (si el usuario ya está logueado)
-        const cleanUrl = baseUrl.replace(/\/$/, '');
-        const token = await auth.getTokenFromNextendSession(cleanUrl);
-        
-        if (token) {
-            wcAPI.init(auth.getBaseUrl());
-            showDashboard();
-            loadDashboard();
-            checkAndShowShippingMenu();
-            showToast('¡Bienvenido!', 'success');
-        } else {
-            // Si no hay sesión, redirigir a WordPress para login
-            showToast('Redirigiendo a WordPress para iniciar sesión...', 'info');
-            const loginUrl = `${cleanUrl}/wp-login.php?redirect_to=${encodeURIComponent(window.location.href)}`;
-            window.location.href = loginUrl;
-        }
-    } catch (error) {
-        // Si no hay sesión activa, redirigir a WordPress
-        if (error.message.includes('No hay sesión activa') || error.message.includes('401')) {
-            showToast('Redirigiendo a WordPress para iniciar sesión con Nextend...', 'info');
-            const cleanUrl = baseUrl.replace(/\/$/, '');
-            const loginUrl = `${cleanUrl}/wp-login.php?redirect_to=${encodeURIComponent(window.location.href)}`;
-            window.location.href = loginUrl;
-        } else {
-            errorDiv.textContent = error.message;
-            errorDiv.classList.add('show');
-            showToast('Error: ' + error.message, 'error');
-        }
-    }
-}
 
 
 function handleLogout() {
