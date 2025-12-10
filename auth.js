@@ -56,7 +56,103 @@ class Auth {
         }));
     }
 
-    // Login directo con usuario/contraseña (MÁS SIMPLE - funciona en cualquier sitio)
+    // Login con token (MÁS SIMPLE - sin contraseña)
+    async loginWithToken(baseUrl, token) {
+        try {
+            const cleanUrl = baseUrl.replace(/\/$/, '');
+            
+            const response = await fetch(`${cleanUrl}/wp-json/plaza/v1/login-token`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    token: token
+                })
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                const errorMessage = errorData.message || `Error ${response.status}: ${response.statusText}`;
+                throw new Error(errorMessage);
+            }
+
+            const data = await response.json();
+
+            if (!data.success || !data.token) {
+                throw new Error(data.message || 'Error en la autenticación');
+            }
+
+            // Guardar credenciales (token)
+            this.saveCredentials(
+                data.baseUrl || cleanUrl,
+                data.token,
+                data.userId || null,
+                null,
+                false
+            );
+
+            this.isAuthenticated = true;
+
+            // Verificar rol de usuario usando el token
+            try {
+                const wpUrl = `${cleanUrl}/wp-json/wp/v2/users/me?context=edit`;
+                const wpResponse = await fetch(wpUrl, {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': `Bearer ${data.token}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                if (wpResponse.ok) {
+                    const userData = await wpResponse.json();
+                    let roles = userData.roles;
+                    
+                    if (!roles && userData.id) {
+                        try {
+                            const userByIdUrl = `${cleanUrl}/wp-json/wp/v2/users/${userData.id}?context=edit`;
+                            const userByIdResponse = await fetch(userByIdUrl, {
+                                method: 'GET',
+                                headers: {
+                                    'Authorization': `Bearer ${data.token}`,
+                                    'Content-Type': 'application/json'
+                                }
+                            });
+                            
+                            if (userByIdResponse.ok) {
+                                const userByIdData = await userByIdResponse.json();
+                                roles = userByIdData.roles;
+                            }
+                        } catch (e) {
+                            console.warn('No se pudieron obtener roles detallados');
+                        }
+                    }
+                    
+                    const userRole = roles && roles.length > 0 ? roles[0] : null;
+                    const isAdmin = roles && roles.includes('administrator');
+                    
+                    // Actualizar credenciales con rol
+                    this.saveCredentials(
+                        data.baseUrl || cleanUrl,
+                        data.token,
+                        data.userId,
+                        userRole,
+                        isAdmin
+                    );
+                }
+            } catch (e) {
+                console.warn('No se pudo obtener información del usuario:', e);
+            }
+            
+            return true;
+        } catch (error) {
+            console.error('Error en login con token:', error);
+            throw error;
+        }
+    }
+
+    // Login directo con usuario/contraseña (alternativa)
     async directLogin(baseUrl, username, password) {
         try {
             const cleanUrl = baseUrl.replace(/\/$/, '');

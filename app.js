@@ -132,7 +132,13 @@ async function checkAndShowShippingMenu() {
 
 // Event Listeners
 function setupEventListeners() {
-    // Login directo (método principal)
+    // Login con token (método principal)
+    const loginTokenForm = document.getElementById('login-token-form');
+    if (loginTokenForm) {
+        loginTokenForm.addEventListener('submit', handleTokenLogin);
+    }
+    
+    // Login directo (alternativa)
     const loginForm = document.getElementById('login-form');
     if (loginForm) {
         loginForm.addEventListener('submit', handleDirectLogin);
@@ -301,6 +307,45 @@ function setupEventListeners() {
 // Opciones disponibles:
 // 1. Login directo (usuario/contraseña) - RECOMENDADO - Funciona en cualquier sitio
 // 2. Google OAuth (opcional, requiere configuración por sitio)
+
+// ========== LOGIN CON TOKEN ==========
+
+async function handleTokenLogin(e) {
+    e.preventDefault();
+    
+    const errorDiv = document.getElementById('login-error');
+    errorDiv.textContent = '';
+    errorDiv.classList.remove('show');
+    
+    const baseUrl = document.getElementById('woocommerce-url').value;
+    const token = document.getElementById('token').value.trim();
+    
+    if (!baseUrl || !token) {
+        errorDiv.textContent = 'Por favor completa todos los campos';
+        errorDiv.classList.add('show');
+        showToast('Campos requeridos', 'error');
+        return;
+    }
+    
+    try {
+        showToast('Iniciando sesión...', 'success');
+        await auth.loginWithToken(baseUrl, token);
+        
+        wcAPI.init(auth.getBaseUrl());
+        showDashboard();
+        loadDashboard();
+        checkAndShowShippingMenu();
+        
+        // Limpiar formulario
+        document.getElementById('token').value = '';
+        
+        showToast('¡Bienvenido!', 'success');
+    } catch (error) {
+        errorDiv.textContent = error.message;
+        errorDiv.classList.add('show');
+        showToast('Error: ' + error.message, 'error');
+    }
+}
 
 // ========== LOGIN DIRECTO ==========
 

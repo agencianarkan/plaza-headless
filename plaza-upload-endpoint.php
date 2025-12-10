@@ -98,6 +98,13 @@ add_action('rest_api_init', function() {
         'permission_callback' => '__return_true',
     ));
     
+    // Endpoint para login con token (MÁS SIMPLE - sin contraseña)
+    register_rest_route('plaza/v1', '/login-token', array(
+        'methods' => 'POST',
+        'callback' => 'plaza_login_with_token',
+        'permission_callback' => '__return_true',
+    ));
+    
     // Endpoint para subir imágenes
     register_rest_route('plaza/v1', '/upload-image', array(
         'methods' => 'POST',
@@ -111,6 +118,193 @@ add_action('rest_api_init', function() {
  */
 add_action('admin_menu', function() {
     add_options_page('Plaza Settings', 'Plaza', 'manage_options', 'plaza-settings', 'plaza_options_page');
+});
+
+/**
+ * Agregar sección de Plaza en perfil de usuario (Tokens Personalizables)
+ */
+add_action('show_user_profile', 'plaza_user_profile_fields');
+add_action('edit_user_profile', 'plaza_user_profile_fields');
+add_action('personal_options_update', 'plaza_save_user_profile_fields');
+add_action('edit_user_profile_update', 'plaza_save_user_profile_fields');
+
+function plaza_user_profile_fields($user) {
+    // Solo mostrar para usuarios con permisos
+    if (!user_can($user->ID, 'manage_woocommerce') && !user_can($user->ID, 'administrator')) {
+        return;
+    }
+    
+    // Obtener todos los tokens del usuario
+    $tokens = get_user_meta($user->ID, 'plaza_tokens', true);
+    if (!is_array($tokens)) {
+        $tokens = array();
+    }
+    
+    ?>
+    <h3>Plaza - Tokens de Acceso Personalizables</h3>
+    <table class="form-table">
+        <tr>
+            <th><label>Gestionar Tokens</label></th>
+            <td>
+                <div id="plaza-tokens-list">
+                    <?php if (!empty($tokens)): ?>
+                        <table class="widefat" style="margin-bottom: 15px;">
+                            <thead>
+                                <tr>
+                                    <th>Nombre</th>
+                                    <th>Token</th>
+                                    <th>Creado</th>
+                                    <th>Acciones</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php foreach ($tokens as $token_id => $token_data): ?>
+                                    <tr>
+                                        <td><strong><?php echo esc_html($token_data['name']); ?></strong></td>
+                                        <td>
+                                            <code style="font-size: 11px;"><?php echo esc_html($token_data['token']); ?></code>
+                                            <button type="button" class="button button-small" onclick="copyToken('<?php echo esc_js($token_data['token']); ?>')">Copiar</button>
+                                        </td>
+                                        <td><?php echo date('d/m/Y H:i', $token_data['created']); ?></td>
+                                        <td>
+                                            <a href="?plaza_delete_token=<?php echo esc_attr($token_id); ?>&user_id=<?php echo $user->ID; ?>" 
+                                               class="button button-small" 
+                                               onclick="return confirm('¿Eliminar este token?')">Eliminar</a>
+                                        </td>
+                                    </tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    <?php else: ?>
+                        <p>No hay tokens creados. Crea uno nuevo abajo.</p>
+                    <?php endif; ?>
+                </div>
+                
+                <hr style="margin: 20px 0;">
+                
+                <h4>Crear Nuevo Token</h4>
+                <form method="post" action="">
+                    <?php wp_nonce_field('plaza_create_token', 'plaza_token_nonce'); ?>
+                    <input type="hidden" name="plaza_action" value="create_token">
+                    <input type="hidden" name="user_id" value="<?php echo $user->ID; ?>">
+                    
+                    <p>
+                        <label for="plaza_token_name"><strong>Nombre del Token:</strong></label><br>
+                        <input type="text" name="plaza_token_name" id="plaza_token_name" class="regular-text" 
+                               placeholder="Ej: Plaza Desktop, Plaza Móvil, etc." required>
+                        <span class="description">Elige un nombre descriptivo para identificar este token.</span>
+                    </p>
+                    
+                    <p>
+                        <label for="plaza_token_value"><strong>Valor del Token (Personalizable):</strong></label><br>
+                        <input type="text" name="plaza_token_value" id="plaza_token_value" class="regular-text" 
+                               placeholder="Deja vacío para generar automáticamente" 
+                               pattern="[A-Za-z0-9_-]{8,}" 
+                               title="Mínimo 8 caracteres. Solo letras, números, guiones y guiones bajos.">
+                        <span class="description">
+                            Personaliza tu token o déjalo vacío para generar uno automático. 
+                            Mínimo 8 caracteres. Solo letras, números, guiones (-) y guiones bajos (_).
+                        </span>
+                    </p>
+                    
+                    <p>
+                        <button type="submit" class="button button-primary">Crear Token</button>
+                    </p>
+                </form>
+                
+                <script>
+                function copyToken(token) {
+                    navigator.clipboard.writeText(token).then(function() {
+                        alert('Token copiado al portapapeles');
+                    });
+                }
+                </script>
+            </td>
+        </tr>
+    </table>
+    <?php
+}
+
+function plaza_save_user_profile_fields($user_id) {
+    if (!current_user_can('edit_user', $user_id)) {
+        return;
+    }
+    
+    if (!isset($_POST['plaza_action']) || $_POST['plaza_action'] !== 'create_token') {
+        return;
+    }
+    
+    if (!isset($_POST['plaza_token_nonce']) || !wp_verify_nonce($_POST['plaza_token_nonce'], 'plaza_create_token')) {
+        return;
+    }
+    
+    $token_name = sanitize_text_field($_POST['plaza_token_name']);
+    $token_value = isset($_POST['plaza_token_value']) ? trim($_POST['plaza_token_value']) : '';
+    
+    if (empty($token_name)) {
+        return;
+    }
+    
+    // Si no se proporciona valor, generar uno automático
+    if (empty($token_value)) {
+        $token_value = wp_generate_password(16, false, false);
+    } else {
+        // Validar formato personalizado
+        if (!preg_match('/^[A-Za-z0-9_-]{8,}$/', $token_value)) {
+            add_action('admin_notices', function() {
+                echo '<div class="error"><p>El token debe tener mínimo 8 caracteres y solo puede contener letras, números, guiones y guiones bajos.</p></div>';
+            });
+            return;
+        }
+    }
+    
+    // Verificar que el token no esté duplicado
+    $tokens = get_user_meta($user_id, 'plaza_tokens', true);
+    if (!is_array($tokens)) {
+        $tokens = array();
+    }
+    
+    foreach ($tokens as $existing_token) {
+        if ($existing_token['token'] === $token_value) {
+            add_action('admin_notices', function() {
+                echo '<div class="error"><p>Este token ya existe. Elige otro valor.</p></div>';
+            });
+            return;
+        }
+    }
+    
+    // Crear nuevo token
+    $token_id = uniqid('plaza_', true);
+    $tokens[$token_id] = array(
+        'name' => $token_name,
+        'token' => $token_value,
+        'created' => time()
+    );
+    
+    update_user_meta($user_id, 'plaza_tokens', $tokens);
+    
+    add_action('admin_notices', function() {
+        echo '<div class="notice notice-success"><p>Token creado exitosamente.</p></div>';
+    });
+}
+
+/**
+ * Manejar eliminación de token desde perfil
+ */
+add_action('admin_init', function() {
+    if (isset($_GET['plaza_delete_token']) && isset($_GET['user_id']) && current_user_can('edit_user', $_GET['user_id'])) {
+        $token_id = sanitize_text_field($_GET['plaza_delete_token']);
+        $user_id = intval($_GET['user_id']);
+        
+        $tokens = get_user_meta($user_id, 'plaza_tokens', true);
+        if (is_array($tokens) && isset($tokens[$token_id])) {
+            unset($tokens[$token_id]);
+            update_user_meta($user_id, 'plaza_tokens', $tokens);
+        }
+        
+        wp_redirect(admin_url('user-edit.php?user_id=' . $user_id . '&plaza_token_deleted=1'));
+        exit;
+    }
 });
 
 add_action('admin_init', function() {
@@ -152,7 +346,70 @@ function plaza_options_page() {
 }
 
 /**
- * Login directo con usuario/contraseña (MÁS SIMPLE - funciona en cualquier sitio)
+ * Login con token personalizable (PERMANENTE - sin expiración)
+ * El usuario genera tokens personalizados desde su perfil de WordPress
+ */
+function plaza_login_with_token($request) {
+    // Agregar headers CORS
+    plaza_add_cors_headers();
+    
+    $token = $request->get_param('token');
+    
+    if (empty($token)) {
+        return new WP_Error('missing_token', 'Token requerido', array('status' => 400));
+    }
+    
+    // Buscar usuario que tenga este token en sus tokens personalizados
+    $users = get_users(array(
+        'meta_key' => 'plaza_tokens',
+        'number' => -1
+    ));
+    
+    $found_user = null;
+    $found_token_data = null;
+    
+    foreach ($users as $user) {
+        $tokens = get_user_meta($user->ID, 'plaza_tokens', true);
+        if (!is_array($tokens)) {
+            continue;
+        }
+        
+        foreach ($tokens as $token_data) {
+            if (isset($token_data['token']) && $token_data['token'] === $token) {
+                $found_user = $user;
+                $found_token_data = $token_data;
+                break 2;
+            }
+        }
+    }
+    
+    if (!$found_user) {
+        return new WP_Error('invalid_token', 'Token inválido', array('status' => 401));
+    }
+    
+    $user_id = $found_user->ID;
+    
+    // Verificar permisos
+    $is_admin = user_can($user_id, 'administrator');
+    $is_shop_manager = user_can($user_id, 'manage_woocommerce');
+    
+    if (!$is_admin && !$is_shop_manager) {
+        return new WP_Error('insufficient_permissions', 'Se requiere rol de Administrator o Shop Manager', array('status' => 403));
+    }
+    
+    return array(
+        'success' => true,
+        'token' => $token, // Devolver el mismo token (permanente)
+        'baseUrl' => home_url(),
+        'email' => $found_user->user_email,
+        'userId' => $user_id,
+        'username' => $found_user->user_login,
+        'token_name' => isset($found_token_data['name']) ? $found_token_data['name'] : 'Token'
+    );
+}
+
+/**
+ * Login directo con usuario/contraseña (alternativa)
  */
 function plaza_direct_login($request) {
     // Agregar headers CORS
@@ -353,24 +610,34 @@ function plaza_check_permissions() {
     }
     
     $token = $matches[1];
+    
+    // Buscar token en tokens personalizados
     $users = get_users(array(
-        'meta_key' => 'plaza_token',
-        'meta_value' => $token,
-        'number' => 1
+        'meta_key' => 'plaza_tokens',
+        'number' => -1
     ));
     
-    if (empty($users)) {
+    $found_user = null;
+    
+    foreach ($users as $user) {
+        $tokens = get_user_meta($user->ID, 'plaza_tokens', true);
+        if (!is_array($tokens)) {
+            continue;
+        }
+        
+        foreach ($tokens as $token_data) {
+            if (isset($token_data['token']) && $token_data['token'] === $token) {
+                $found_user = $user;
+                break 2;
+            }
+        }
+    }
+    
+    if (!$found_user) {
         return new WP_Error('unauthorized', 'Token inválido', array('status' => 401));
     }
     
-    $user = $users[0];
-    $expires = get_user_meta($user->ID, 'plaza_token_expires', true);
-    
-    if (empty($expires) || time() > $expires) {
-        delete_user_meta($user->ID, 'plaza_token');
-        delete_user_meta($user->ID, 'plaza_token_expires');
-        return new WP_Error('unauthorized', 'Token expirado', array('status' => 401));
-    }
+    $user = $found_user;
     
     wp_set_current_user($user->ID);
     
