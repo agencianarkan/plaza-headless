@@ -31,16 +31,44 @@ function encrypt_credential($data) {
  */
 function decrypt_credential($data) {
     if (empty($data)) {
-        return '';
+        return false;
     }
     
     try {
-        $data = base64_decode($data);
-        list($encrypted_data, $iv) = explode('::', $data, 2);
-        $iv = base64_decode($iv);
+        $decoded = base64_decode($data, true);
+        if ($decoded === false) {
+            error_log("Error: No se pudo decodificar base64");
+            return false;
+        }
         
-        return openssl_decrypt($encrypted_data, ENCRYPTION_METHOD, ENCRYPTION_KEY, 0, $iv);
+        if (strpos($decoded, '::') === false) {
+            error_log("Error: Formato de encriptación inválido (no contiene '::')");
+            return false;
+        }
+        
+        list($encrypted_data, $iv_encoded) = explode('::', $decoded, 2);
+        
+        if (empty($encrypted_data) || empty($iv_encoded)) {
+            error_log("Error: Datos de encriptación vacíos después de separar");
+            return false;
+        }
+        
+        $iv = base64_decode($iv_encoded, true);
+        if ($iv === false) {
+            error_log("Error: No se pudo decodificar IV");
+            return false;
+        }
+        
+        $decrypted = openssl_decrypt($encrypted_data, ENCRYPTION_METHOD, ENCRYPTION_KEY, 0, $iv);
+        
+        if ($decrypted === false) {
+            error_log("Error: openssl_decrypt falló");
+            return false;
+        }
+        
+        return $decrypted;
     } catch (Exception $e) {
+        error_log("Error en decrypt_credential: " . $e->getMessage());
         return false;
     }
 }

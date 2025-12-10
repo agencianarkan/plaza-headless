@@ -46,16 +46,40 @@ try {
     
     if (!$tienda) {
         http_response_code(404);
-        echo json_encode(['error' => 'Tienda no encontrada']);
+        echo json_encode(['error' => 'Tienda no encontrada', 'debug' => 'Tienda ID: ' . $usuario['tienda_id']]);
+        exit;
+    }
+    
+    // Verificar que tenga Application Password
+    if (empty($tienda['app_password_encrypted'])) {
+        http_response_code(500);
+        echo json_encode([
+            'error' => 'Error al obtener credenciales de la tienda',
+            'debug' => 'La tienda no tiene Application Password configurado'
+        ]);
         exit;
     }
     
     // Desencriptar Application Password
     $app_password = decrypt_credential($tienda['app_password_encrypted']);
     
-    if (!$app_password) {
+    if ($app_password === false || empty($app_password)) {
+        error_log("Error desencriptando Application Password - Tienda ID: {$tienda['id']}, Hash length: " . strlen($tienda['app_password_encrypted']));
         http_response_code(500);
-        echo json_encode(['error' => 'Error al obtener credenciales de la tienda']);
+        echo json_encode([
+            'error' => 'Error al obtener credenciales de la tienda',
+            'debug' => 'No se pudo desencriptar el Application Password. Verifica que la tienda tenga un Application Password válido guardado.'
+        ]);
+        exit;
+    }
+    
+    // Verificar que tenga wp_user
+    if (empty($tienda['wp_user'])) {
+        http_response_code(500);
+        echo json_encode([
+            'error' => 'Error al obtener credenciales de la tienda',
+            'debug' => 'La tienda no tiene usuario de WordPress configurado'
+        ]);
         exit;
     }
     
