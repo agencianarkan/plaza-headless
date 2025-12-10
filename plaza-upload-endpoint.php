@@ -77,10 +77,24 @@ add_action('rest_api_init', function() {
         'permission_callback' => '__return_true',
     ));
     
-    // Endpoint para autenticación con Google OAuth
+    // Endpoint para autenticación con Google OAuth (código personalizado)
     register_rest_route('plaza/v1', '/google-auth', array(
         'methods' => 'POST',
         'callback' => 'plaza_google_auth',
+        'permission_callback' => '__return_true',
+    ));
+    
+    // Endpoint para obtener token después de login con Nextend Social Login
+    register_rest_route('plaza/v1', '/get-token', array(
+        'methods' => 'GET',
+        'callback' => 'plaza_get_token_from_session',
+        'permission_callback' => '__return_true',
+    ));
+    
+    // Endpoint para login directo con usuario/contraseña
+    register_rest_route('plaza/v1', '/login', array(
+        'methods' => 'POST',
+        'callback' => 'plaza_direct_login',
         'permission_callback' => '__return_true',
     ));
     
@@ -136,6 +150,105 @@ function plaza_options_page() {
     </div>
     <?php
 }
+
+/**
+ * Login directo con usuario/contraseña (MÁS SIMPLE - funciona en cualquier sitio)
+ */
+function plaza_direct_login($request) {
+    // Agregar headers CORS
+    plaza_add_cors_headers();
+    
+    $username = $request->get_param('username');
+    $password = $request->get_param('password');
+    
+    if (empty($username) || empty($password)) {
+        return new WP_Error('missing_params', 'Usuario y contraseña requeridos', array('status' => 400));
+    }
+    
+    // Validar credenciales con WordPress
+    $user = wp_authenticate($username, $password);
+    
+    if (is_wp_error($user)) {
+        return new WP_Error('invalid_credentials', 'Usuario o contraseña incorrectos', array('status' => 401));
+    }
+    
+    // Verificar permisos (Administrator o Shop Manager)
+    if (!user_can($user->ID, 'manage_woocommerce') && !user_can($user->ID, 'administrator')) {
+        return new WP_Error('insufficient_permissions', 'Se requiere rol de Administrator o Shop Manager', array('status' => 403));
+    }
+    
+    // Generar token simple
+    $token = wp_generate_password(32, false, false);
+    $expires = time() + (30 * 24 * 60 * 60); // 30 días
+    
+    update_user_meta($user->ID, 'plaza_token', $token);
+    update_user_meta($user->ID, 'plaza_token_expires', $expires);
+    
+    return array(
+        'success' => true,
+        'token' => $token,
+        'baseUrl' => home_url(),
+        'email' => $user->user_email,
+        'userId' => $user->ID,
+        'username' => $user->user_login
+    );
+}
+
+/**
+ * Obtener token desde sesión de WordPress (para Nextend Social Login)
+ * Cuando un usuario inicia sesión con Nextend, puede llamar este endpoint
+ * para obtener un token para usar en la REST API
+ */
+function plaza_get_token_from_session($request) {
+    // Verificar si hay un usuario logueado en WordPress
+    $current_user_id = get_current_user_id();
+    
+    if (!$current_user_id) {
+        return new WP_Error('not_logged_in', 'No hay sesión activa. Por favor, inicia sesión primero con Nextend Social Login.', array('status' => 401));
+    }
+    
+    $user = get_userdata($current_user_id);
+    
+    // Verificar permisos
+    if (!user_can($current_user_id, 'manage_woocommerce') && !user_can($current_user_id, 'administrator')) {
+        return new WP_Error('insufficient_permissions', 'Se requiere rol de Administrator o Shop Manager', array('status' => 403));
+    }
+    
+    // Verificar si ya tiene un token válido
+    $existing_token = get_user_meta($current_user_id, 'plaza_token', true);
+    $expires = get_user_meta($current_user_id, 'plaza_token_expires', true);
+    
+    // Si tiene token válido, devolverlo
+    if ($existing_token && $expires && time() < $expires) {
+        return array(
+            'success' => true,
+            'token' => $existing_token,
+            'baseUrl' => home_url(),
+            'email' => $user->user_email,
+            'userId' => $current_user_id,
+            'username' => $user->user_login,
+            'from_nextend' => true
+        );
+    }
+    
+    // Generar nuevo token
+    $token = wp_generate_password(32, false, false);
+    $expires = time() + (30 * 24 * 60 * 60); // 30 días
+    
+    update_user_meta($current_user_id, 'plaza_token', $token);
+    update_user_meta($current_user_id, 'plaza_token_expires', $expires);
+    
+    return array(
+        'success' => true,
+        'token' => $token,
+        'baseUrl' => home_url(),
+        'email' => $user->user_email,
+        'userId' => $current_user_id,
+        'username' => $user->user_login,
+        'from_nextend' => true
+    );
+}
+
 
 /**
  * Autenticación con Google OAuth
