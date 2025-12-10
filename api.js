@@ -31,10 +31,8 @@ class WooCommerceAPI {
             this.baseUrl = auth.getBaseUrl();
         }
 
-        // Usar proxy en lugar de petición directa (elimina CORS)
-        // El proxy está en /wp-json/plaza/v1/proxy/wc/v3/...
-        const proxyPath = endpoint.startsWith('/') ? endpoint.substring(1) : endpoint;
-        const url = `${this.baseUrl}/wp-json/plaza/v1/proxy/${proxyPath}`;
+        // Petición directa a WooCommerce API (Basic Auth no tiene problemas de CORS si está configurado)
+        const url = `${this.baseUrl}/wp-json/wc/v3${endpoint}`;
         const headers = this.getHeaders();
 
         try {

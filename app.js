@@ -133,23 +133,19 @@ async function checkAndShowShippingMenu() {
 // Event Listeners
 function setupEventListeners() {
     // Login con token (único método)
-    const loginTokenForm = document.getElementById('login-token-form');
-    if (loginTokenForm) {
-        loginTokenForm.addEventListener('submit', handleTokenLogin);
+    // Mostrar campo de Application Password si no está guardado
+    checkAppPasswordField();
+    
+    const loginForm = document.getElementById('login-form');
+    if (loginForm) {
+        loginForm.addEventListener('submit', handleLogin);
     }
-    // Permitir iniciar sesión con Enter en el campo de token
-    const tokenInput = document.getElementById('token');
-    if (tokenInput) {
-        tokenInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                e.preventDefault();
-                const form = document.getElementById('login-token-form');
-                if (form) {
-                    form.dispatchEvent(new Event('submit'));
-                }
-            }
-        });
-    }
+    
+    // Actualizar campo de Application Password cuando cambie la URL o usuario
+    const urlInput = document.getElementById('woocommerce-url');
+    const usernameInput = document.getElementById('username');
+    if (urlInput) urlInput.addEventListener('input', checkAppPasswordField);
+    if (usernameInput) usernameInput.addEventListener('input', checkAppPasswordField);
     
     // Logout (solo si existe)
     const logoutBtn = document.getElementById('logout-btn');
@@ -298,20 +294,54 @@ function setupEventListeners() {
 // 1. Login directo (usuario/contraseña) - RECOMENDADO - Funciona en cualquier sitio
 // 2. Google OAuth (opcional, requiere configuración por sitio)
 
-// ========== LOGIN CON TOKEN ==========
+// ========== VERIFICAR CAMPO APPLICATION PASSWORD ==========
 
-async function handleTokenLogin(e) {
+function checkAppPasswordField() {
+    const urlInput = document.getElementById('woocommerce-url');
+    const usernameInput = document.getElementById('username');
+    const appPasswordGroup = document.getElementById('app-password-group');
+    const appPasswordInput = document.getElementById('app-password');
+    
+    if (!urlInput || !usernameInput || !appPasswordGroup) return;
+    
+    const baseUrl = urlInput.value.trim().replace(/\/$/, '');
+    const username = usernameInput.value.trim();
+    
+    // Verificar si ya hay Application Password guardado para esta URL+usuario
+    if (baseUrl && username) {
+        const savedAppPassword = auth.getSavedAppPassword(baseUrl, username);
+        if (savedAppPassword) {
+            // Ya existe, ocultar campo
+            appPasswordGroup.style.display = 'none';
+            if (appPasswordInput) appPasswordInput.required = false;
+        } else {
+            // No existe, mostrar campo (primera vez)
+            appPasswordGroup.style.display = 'block';
+            if (appPasswordInput) appPasswordInput.required = true;
+        }
+    } else {
+        // Campos vacíos, ocultar
+        appPasswordGroup.style.display = 'none';
+    }
+}
+
+// ========== LOGIN CON USUARIO Y CONTRASEÑA ==========
+
+async function handleLogin(e) {
     e.preventDefault();
     
     const errorDiv = document.getElementById('login-error');
     errorDiv.textContent = '';
     errorDiv.classList.remove('show');
     
-    const baseUrl = document.getElementById('woocommerce-url').value;
-    const token = document.getElementById('token').value.trim();
+    const baseUrl = document.getElementById('woocommerce-url').value.trim().replace(/\/$/, '');
+    const username = document.getElementById('username').value.trim();
+    const password = document.getElementById('password').value;
+    const appPasswordInput = document.getElementById('app-password');
+    const appPassword = appPasswordInput ? appPasswordInput.value.trim() : '';
     
-    if (!baseUrl || !token) {
-        errorDiv.textContent = 'Por favor completa todos los campos';
+    if (!baseUrl || !username || !password) {
+        errorDiv.textContent = 'Por favor completa todos los campos requeridos';
         errorDiv.classList.add('show');
         showToast('Campos requeridos', 'error');
         return;
@@ -319,7 +349,27 @@ async function handleTokenLogin(e) {
     
     try {
         showToast('Iniciando sesión...', 'success');
-        await auth.loginWithToken(baseUrl, token);
+        
+        // Verificar si hay Application Password guardado
+        let finalAppPassword = auth.getSavedAppPassword(baseUrl, username);
+        
+        // Si no hay guardado, usar el que ingresó el usuario
+        if (!finalAppPassword && appPassword) {
+            finalAppPassword = appPassword;
+            // Guardar para la próxima vez
+            auth.saveAppPassword(baseUrl, username, finalAppPassword);
+        }
+        
+        // Si aún no hay Application Password, mostrar error
+        if (!finalAppPassword) {
+            errorDiv.textContent = 'Application Password requerido. Ingresa tu Application Password de WordPress.';
+            errorDiv.classList.add('show');
+            showToast('Application Password requerido', 'error');
+            document.getElementById('app-password-group').style.display = 'block';
+            return;
+        }
+        
+        await auth.loginWithCredentials(baseUrl, username, finalAppPassword);
         
         wcAPI.init(auth.getBaseUrl());
         showDashboard();
@@ -327,7 +377,9 @@ async function handleTokenLogin(e) {
         checkAndShowShippingMenu();
         
         // Limpiar formulario
-        document.getElementById('token').value = '';
+        document.getElementById('password').value = '';
+        const appPasswordInput = document.getElementById('app-password');
+        if (appPasswordInput) appPasswordInput.value = '';
         
         showToast('¡Bienvenido!', 'success');
     } catch (error) {
