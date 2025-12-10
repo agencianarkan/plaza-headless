@@ -132,7 +132,6 @@ async function checkAndShowShippingMenu() {
 
 // Event Listeners
 function setupEventListeners() {
-    // Login con token (único método)
     // Mostrar campo de Application Password si no está guardado
     checkAppPasswordField();
     
@@ -289,11 +288,6 @@ function setupEventListeners() {
     }
 }
 
-// ========== AUTENTICACIÓN ==========
-// Opciones disponibles:
-// 1. Login directo (usuario/contraseña) - RECOMENDADO - Funciona en cualquier sitio
-// 2. Google OAuth (opcional, requiere configuración por sitio)
-
 // ========== VERIFICAR CAMPO APPLICATION PASSWORD ==========
 
 function checkAppPasswordField() {
@@ -360,11 +354,11 @@ async function handleLogin(e) {
             auth.saveAppPassword(baseUrl, username, finalAppPassword);
         }
         
-        // Si aún no hay Application Password, mostrar error
+        // Si aún no hay Application Password/contraseña, mostrar error
         if (!finalAppPassword) {
-            errorDiv.textContent = 'Application Password requerido. Ingresa tu Application Password de WordPress.';
+            errorDiv.textContent = 'Application Password o contraseña requerido. Si Application Passwords da error, usa tu contraseña normal de WordPress.';
             errorDiv.classList.add('show');
-            showToast('Application Password requerido', 'error');
+            showToast('Credenciales requeridas', 'error');
             document.getElementById('app-password-group').style.display = 'block';
             return;
         }

@@ -92,13 +92,15 @@ class Auth {
         }));
     }
 
-    // Login con usuario y Application Password (MÉTODO PRINCIPAL)
-    async loginWithCredentials(baseUrl, username, appPassword) {
+    // Login con usuario y Application Password o contraseña normal (MÉTODO PRINCIPAL)
+    async loginWithCredentials(baseUrl, username, appPasswordOrPassword) {
         try {
             const cleanUrl = baseUrl.replace(/\/$/, '');
             
-            // Crear Basic Auth header: usuario:application-password en base64
-            const credentials = btoa(`${username}:${appPassword}`);
+            // Crear Basic Auth header: usuario:password en base64
+            // Si es Application Password, se usa directamente
+            // Si es contraseña normal, también funciona con Basic Auth
+            const credentials = btoa(`${username}:${appPasswordOrPassword}`);
             
             // Probar la autenticación haciendo una petición a la API de WordPress
             const response = await fetch(`${cleanUrl}/wp-json/wp/v2/users/me?context=edit`, {
@@ -111,7 +113,7 @@ class Auth {
 
             if (!response.ok) {
                 if (response.status === 401) {
-                    throw new Error('Usuario o Application Password incorrectos');
+                    throw new Error('Usuario o contraseña incorrectos. Verifica tus credenciales.');
                 }
                 const errorData = await response.json().catch(() => ({}));
                 throw new Error(errorData.message || `Error ${response.status}`);
@@ -124,11 +126,11 @@ class Auth {
                 throw new Error('Se requiere rol de Administrator o Shop Manager');
             }
 
-            // Guardar credenciales
+            // Guardar credenciales (guardamos como appPassword aunque pueda ser contraseña normal)
             this.saveCredentials(
                 cleanUrl,
                 username,
-                appPassword,
+                appPasswordOrPassword,
                 userData.id,
                 userData.roles && userData.roles[0] ? userData.roles[0] : null,
                 userData.capabilities && userData.capabilities.administrator
