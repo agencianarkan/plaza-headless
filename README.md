@@ -2,6 +2,33 @@
 
 Plaza es un panel de administración headless para WooCommerce que permite gestionar productos, pedidos, clientes, reportes y envíos desde una interfaz web moderna y fácil de usar.
 
+## 📚 Documentación Completa
+
+**⚠️ IMPORTANTE**: Este README contiene información de la versión inicial. Para la documentación completa del sistema actual (versión 3.0 con multi-tienda y autenticación centralizada), consulta:
+
+👉 **[DOCUMENTACION_COMPLETA.md](./DOCUMENTACION_COMPLETA.md)**
+
+La documentación completa incluye:
+- Arquitectura del sistema multi-tienda
+- Estructura de base de datos
+- Configuración del backend PHP
+- Sistema de autenticación con tokens
+- Panel de administración
+- Guías de uso y troubleshooting
+
+---
+
+## 📖 Versión Actual: 3.0 - Sistema Multi-Tienda
+
+El sistema actual implementa:
+- ✅ Autenticación centralizada con base de datos
+- ✅ Asignación de usuarios a tiendas específicas
+- ✅ Proxy seguro para credenciales de WooCommerce
+- ✅ Panel de administración para gestionar tiendas y usuarios
+- ✅ Sistema de sesiones con tokens
+
+---
+
 ## 📋 Tabla de Contenidos
 
 - [Características](#características)
